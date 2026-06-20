@@ -93,6 +93,16 @@ const Heatmap = (() => {
       const diveCode = filterMode.slice(5);
       return marks.filter((m) => m.dive === diveCode);
     }
+    if (filterMode.startsWith("condition_")) {
+      const conditionVal = decodeURIComponent(filterMode.slice(10));
+      return marks.filter((m) => {
+        const cond = m.condition?.trim() || "";
+        if (conditionVal === "__empty__") {
+          return cond === "";
+        }
+        return cond === conditionVal;
+      });
+    }
 
     return marks;
   }

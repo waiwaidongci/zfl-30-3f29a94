@@ -135,6 +135,7 @@ const UI = (() => {
       elements.heatmapLegendBar.style.background = Heatmap.getGradientCSS();
     }
     updateHeatmapDiveFilter();
+    updateHeatmapConditionFilter();
   }
 
   function initRibs() {
@@ -836,6 +837,7 @@ const UI = (() => {
     updateReviewDiveFilter();
     updateMeasureDiveSelect();
     updateHeatmapDiveFilter();
+    updateHeatmapConditionFilter();
     updateScaleDisplay();
     renderGrid();
 
@@ -2499,6 +2501,53 @@ const UI = (() => {
       newOptgroup.appendChild(option);
     });
     elements.heatmapFilter.appendChild(newOptgroup);
+    if (currentVal) {
+      elements.heatmapFilter.value = currentVal;
+    }
+  }
+
+  function updateHeatmapConditionFilter() {
+    if (!elements.heatmapFilter) return;
+    const currentVal = elements.heatmapFilter.value;
+    const optgroupCondition = elements.heatmapFilter.querySelector('optgroup[label="按保存状况"]');
+    if (optgroupCondition) {
+      optgroupCondition.remove();
+    }
+
+    const conditionSet = new Set();
+    let hasEmpty = false;
+    marks.forEach((m) => {
+      const cond = m.condition?.trim() || "";
+      if (cond === "") {
+        hasEmpty = true;
+      } else {
+        conditionSet.add(cond);
+      }
+    });
+
+    const conditions = Array.from(conditionSet).sort();
+
+    if (conditions.length > 0 || hasEmpty) {
+      const newOptgroup = document.createElement("optgroup");
+      newOptgroup.label = "按保存状况";
+
+      conditions.forEach((cond) => {
+        const option = document.createElement("option");
+        option.value = "condition_" + encodeURIComponent(cond);
+        option.textContent = cond;
+        newOptgroup.appendChild(option);
+      });
+
+      if (hasEmpty) {
+        const option = document.createElement("option");
+        option.value = "condition___empty__";
+        option.textContent = "未填写";
+        newOptgroup.appendChild(option);
+      }
+
+      elements.heatmapFilter.appendChild(newOptgroup);
+    }
+
     if (currentVal) {
       elements.heatmapFilter.value = currentVal;
     }
