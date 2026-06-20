@@ -1,9 +1,10 @@
 const DataIO = (() => {
-  const STORAGE_KEY = "zfl30Marks";
+  const MARKS_STORAGE_KEY = "zfl30Marks";
+  const DIVES_STORAGE_KEY = "zfl30Dives";
 
   function loadMarks() {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      return JSON.parse(localStorage.getItem(MARKS_STORAGE_KEY) || "[]");
     } catch (e) {
       console.error("Failed to load marks:", e);
       return [];
@@ -11,10 +12,38 @@ const DataIO = (() => {
   }
 
   function saveMarks(marks) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(marks));
+    localStorage.setItem(MARKS_STORAGE_KEY, JSON.stringify(marks));
   }
 
-  function exportJSON(marks, filename = "dive-marks.json") {
+  function loadDives() {
+    try {
+      return JSON.parse(localStorage.getItem(DIVES_STORAGE_KEY) || "[]");
+    } catch (e) {
+      console.error("Failed to load dives:", e);
+      return [];
+    }
+  }
+
+  function saveDives(dives) {
+    localStorage.setItem(DIVES_STORAGE_KEY, JSON.stringify(dives));
+  }
+
+  function exportFullData(marks, dives, filename = "dive-records.json") {
+    const data = {
+      version: "2.0",
+      exportDate: new Date().toISOString(),
+      dives: dives,
+      marks: marks,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function exportMarksOnly(marks, filename = "dive-marks.json") {
     const blob = new Blob([JSON.stringify(marks, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -58,12 +87,20 @@ const DataIO = (() => {
     });
   }
 
+  function isFullDataFormat(data) {
+    return data && typeof data === "object" && "dives" in data && "marks" in data;
+  }
+
   return {
     loadMarks,
     saveMarks,
-    exportJSON,
+    loadDives,
+    saveDives,
+    exportFullData,
+    exportMarksOnly,
     readFileAsText,
     parseJSON,
     triggerFileInput,
+    isFullDataFormat,
   };
 })();

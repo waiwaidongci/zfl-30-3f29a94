@@ -20,7 +20,7 @@
   <header>
     <div>
       <h1>水下考古潜水记录</h1>
-      <div class="muted">点击沉船平面图添加标记，筛选、编辑、导出JSON，或从现场设备导入历史标记。</div>
+      <div class="muted">点击沉船平面图添加标记，管理潜次档案，筛选、编辑、导出JSON。</div>
     </div>
     <div class="header-buttons">
       <button id="importBtn" class="secondary">导入JSON</button>
@@ -29,10 +29,10 @@
   </header>
   <main class="app">
     <section class="panel">
-      <div class="map" id="map"><div class="wreck"></div></div>
-    </section>
-    <aside class="panel">
-      <div class="toolbar">
+      <div class="map-toolbar">
+        <select id="diveFilter">
+          <option value="">全部潜次</option>
+        </select>
         <select id="filter">
           <option value="">全部类型</option>
           <option value="ceramic">陶片</option>
@@ -40,34 +40,88 @@
           <option value="metal">金属件</option>
           <option value="unknown">未知物</option>
         </select>
-        <select id="view">
-          <option value="list">标记列表</option>
-          <option value="timeline">潜次时间线</option>
-        </select>
+        <span class="stats" id="mapStats"></span>
       </div>
-      <form id="form">
-        <h2>标记信息</h2>
-        <input name="id" type="hidden">
-        <label>编号</label><input name="code" required>
-        <label>类型</label>
-        <select name="type">
-          <option value="ceramic">陶片</option>
-          <option value="wood">木构件</option>
-          <option value="metal">金属件</option>
-          <option value="unknown">未知物</option>
-        </select>
-        <label>潜次</label><input name="dive" placeholder="例如DIVE-04" required>
-        <label>深度</label><input name="depth" placeholder="例如18.4m" required>
-        <label>朝向</label><input name="orientation" placeholder="例如东北偏北">
-        <label>保存状态</label><input name="condition" placeholder="例如表面附着贝类">
-        <label>备注</label><textarea name="note"></textarea>
+      <div class="map" id="map"><div class="wreck"></div></div>
+    </section>
+    <aside class="panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="marks">标记管理</button>
+        <button class="tab" data-tab="dives">潜次档案</button>
+      </div>
+
+      <div id="marksTab" class="tab-content">
         <div class="toolbar">
-          <button>保存标记</button>
-          <button type="button" id="deleteBtn" class="secondary">删除</button>
+          <select id="view">
+            <option value="list">标记列表</option>
+            <option value="timeline">潜次时间线</option>
+          </select>
         </div>
-      </form>
-      <h2 id="listTitle">标记列表</h2>
-      <div id="list" class="list"></div>
+        <form id="form">
+          <h2>标记信息</h2>
+          <input name="id" type="hidden">
+          <label>编号</label><input name="code" required>
+          <label>类型</label>
+          <select name="type">
+            <option value="ceramic">陶片</option>
+            <option value="wood">木构件</option>
+            <option value="metal">金属件</option>
+            <option value="unknown">未知物</option>
+          </select>
+          <label>潜次</label>
+          <select name="dive" required>
+            <option value="">请选择潜次</option>
+          </select>
+          <label>深度</label><input name="depth" placeholder="例如18.4m" required>
+          <label>朝向</label><input name="orientation" placeholder="例如东北偏北">
+          <label>保存状态</label><input name="condition" placeholder="例如表面附着贝类">
+          <label>备注</label><textarea name="note"></textarea>
+          <div class="toolbar">
+            <button>保存标记</button>
+            <button type="button" id="deleteBtn" class="secondary">删除</button>
+          </div>
+        </form>
+        <h2 id="listTitle">标记列表</h2>
+        <div id="list" class="list"></div>
+      </div>
+
+      <div id="divesTab" class="tab-content hidden">
+        <div class="dive-stats" id="diveStats"></div>
+        <form id="diveForm">
+          <h2>潜次档案</h2>
+          <input name="id" type="hidden">
+          <label>潜次编号</label><input name="code" placeholder="例如DIVE-01" required>
+          <label>下潜日期</label><input name="date" type="date" required>
+          <label>负责人</label><input name="leader" placeholder="例如张教授" required>
+          <label>天气</label>
+          <select name="weather">
+            <option value="sunny">晴</option>
+            <option value="cloudy">多云</option>
+            <option value="rainy">雨</option>
+            <option value="windy">大风</option>
+            <option value="foggy">雾</option>
+          </select>
+          <label>水流</label>
+          <select name="current">
+            <option value="calm">无流</option>
+            <option value="weak">弱流</option>
+            <option value="moderate">中流</option>
+            <option value="strong">强流</option>
+          </select>
+          <label>能见度</label><input name="visibility" placeholder="例如5-8米" required>
+          <label>任务目标</label><textarea name="objective" placeholder="例如勘查船艉区域，采集陶瓷标本" required></textarea>
+          <div class="toolbar">
+            <button>保存潜次</button>
+            <button type="button" id="deleteDiveBtn" class="secondary">删除</button>
+          </div>
+        </form>
+        <h2>潜次列表</h2>
+        <div id="diveList" class="dive-list"></div>
+        <div id="diveDetail" class="dive-detail hidden">
+          <h2>潜次详情</h2>
+          <div id="diveDetailContent"></div>
+        </div>
+      </div>
     </aside>
   </main>
   <script src="js/dataIO.js"></script>
