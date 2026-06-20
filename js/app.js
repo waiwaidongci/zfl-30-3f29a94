@@ -150,6 +150,7 @@ const App = (() => {
         onUpdateGridConfig: handleUpdateGridConfig,
         onExport: handleExport,
         onImport: handleImport,
+        onImportCSV: handleImportCSV,
         onUpdateReviewStatus: handleUpdateReviewStatus,
       },
     });
@@ -541,6 +542,129 @@ const App = (() => {
         UI.showToast("导入失败: " + e.message, "error");
       }
     }
+  }
+
+  async function handleImportCSV() {
+    try {
+      const file = await DataIO.triggerCSVInput();
+      const text = await DataIO.readFileAsText(file);
+      const parsed = DataIO.parseCSVToMarks(text);
+
+      if (!parsed.success) {
+        UI.showToast("CSV 解析失败: " + parsed.error, "error");
+        return;
+      }
+
+      if (parsed.rows.length === 0) {
+        UI.showToast("CSV 文件中没有数据行", "error");
+        return;
+      }
+
+      UI.showCSVFieldMappingPreview(
+        parsed,
+        (userMapping) => {
+          const remappedMarks = parsed.rows.map((row, idx) => {
+            const mapped = {};
+            for (const [field, header] of Object.entries(userMapping)) {
+              if (header && row[header] !== undefined) {
+                mapped[field] = row[header];
+              }
+            }
+
+            const mark = {
+              code: mapped.code ? mapped.code.trim() : "",
+              type: DataIO.mapType(mapped.type),
+              dive: mapped.dive ? mapped.dive.trim() : "",
+              depth: mapped.depth ? mapped.depth.trim() : "",
+              orientation: mapped.orientation ? mapped.orientation.trim() : "",
+              condition: mapped.condition ? mapped.condition.trim() : "",
+              note: mapped.note ? mapped.note.trim() : "",
+            };
+
+            if (mapped.x !== undefined) {
+              const x = DataIO.parseCoordinate(mapped.x);
+              if (x !== null) mark.x = x;
+            }
+            if (mapped.y !== undefined) {
+              const y = DataIO.parseCoordinate(mapped.y);
+              if (y !== null) mark.y = y;
+            }
+
+            mark._csvLineNumber = idx + 2;
+            mark._rawRow = { ...row };
+            return mark;
+          });
+
+          const remappedParseResult = {
+            ...parsed,
+            mapping: userMapping,
+            marks: remappedMarks,
+          };
+
+          const comparison = Validation.compareCSVMarks(marks, remappedParseResult);
+
+          UI.showCSVImportPreview(
+            remappedParseResult,
+            comparison,
+            (resolutions) => {
+              applyCSVImport(remappedParseResult, comparison, resolutions);
+            },
+            () => {
+              UI.showToast("已取消CSV导入", "info");
+            }
+          );
+        },
+        () => {
+          UI.showToast("已取消CSV导入", "info");
+        }
+      );
+    } catch (e) {
+      if (e.message !== "File selection cancelled" && e.message !== "No file selected") {
+        UI.showToast("CSV导入失败: " + e.message, "error");
+      }
+    }
+  }
+
+  function applyCSVImport(csvParseResult, comparison, resolutions) {
+    const { markResolutions } = resolutions;
+
+    let updatedMarks = [...marks];
+
+    const { newMarks, conflicts, summary } = comparison;
+
+    if (conflicts.length > 0) {
+      updatedMarks = Validation.resolveMarkConflicts(
+        updatedMarks,
+        conflicts,
+        markResolutions || []
+      );
+    }
+
+    if (newMarks.length > 0) {
+      updatedMarks = Validation.addNewMarks(updatedMarks, newMarks);
+    }
+
+    marks = updatedMarks;
+
+    autoCreateDivesFromMarks();
+
+    save();
+    saveDives();
+    saveMeasurements();
+    saveScale();
+    saveGridConfig();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
+
+    const markAdded = summary.new + (markResolutions?.filter((r) => r === "saveas").length || 0);
+    const markOverwritten = markResolutions?.filter((r) => r === "overwrite").length || 0;
+
+    let message = "CSV导入完成：";
+    let parts = [];
+    if (markAdded > 0) parts.push(`标记新增 ${markAdded} 项`);
+    if (markOverwritten > 0) parts.push(`标记覆盖 ${markOverwritten} 项`);
+    if (summary.error > 0) parts.push(`跳过 ${summary.error} 项错误`);
+
+    UI.showToast(message + parts.join("，"), "success");
   }
 
   function applyImport(comparison, resolutions) {

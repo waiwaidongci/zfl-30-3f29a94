@@ -697,6 +697,156 @@ const Validation = (() => {
     return { valid, results, total: attachments.length };
   }
 
+  function validateCSVMarks(csvMarks, headers, mapping) {
+    const results = [];
+    const codeCounts = new Map();
+
+    const requiredFields = ["code", "type", "dive", "depth"];
+    const unmappedRequired = requiredFields.filter((f) => !mapping[f]);
+
+    csvMarks.forEach((mark, index) => {
+      const errors = [];
+      const warnings = [];
+
+      if (unmappedRequired.length > 0) {
+        errors.push(
+          "缺少必要列映射: " +
+            unmappedRequired
+              .map((f) => {
+                const names = {
+                  code: "编号",
+                  type: "类型",
+                  dive: "潜次",
+                  depth: "深度",
+                };
+                return names[f] || f;
+              })
+              .join("、")
+        );
+      }
+
+      const isEmpty = !mark.code && !mark.type && !mark.dive && !mark.depth && !mark.orientation && !mark.condition && !mark.note;
+      if (isEmpty) {
+        errors.push("空行，已跳过");
+      } else {
+        if (!mark.code || !mark.code.trim()) {
+          errors.push("缺少编号");
+        } else {
+          const count = codeCounts.get(mark.code) || 0;
+          codeCounts.set(mark.code, count + 1);
+        }
+
+        if (!mark.type || !mark.type.trim()) {
+          errors.push("缺少类型");
+        } else if (!VALID_TYPES.includes(mark.type)) {
+          errors.push(`未知类型: ${mark.type}`);
+        }
+
+        if (!mark.dive || !mark.dive.trim()) {
+          errors.push("缺少潜次");
+        }
+
+        if (!mark.depth || !mark.depth.trim()) {
+          errors.push("缺少深度");
+        }
+
+        if (mark.x !== undefined && (mark.x < 0 || mark.x > 100)) {
+          errors.push(`X坐标越界: ${mark.x} (需在0-100之间)`);
+        }
+
+        if (mark.y !== undefined && (mark.y < 0 || mark.y > 100)) {
+          errors.push(`Y坐标越界: ${mark.y} (需在0-100之间)`);
+        }
+      }
+
+      results.push({
+        index,
+        lineNumber: mark._csvLineNumber,
+        mark,
+        rawRow: mark._rawRow,
+        errors,
+        warnings,
+        valid: errors.length === 0,
+      });
+    });
+
+    results.forEach((result) => {
+      if (result.mark.code && codeCounts.get(result.mark.code) > 1) {
+        result.errors.push(`编号重复: ${result.mark.code} (CSV文件内出现 ${codeCounts.get(result.mark.code)} 次)`);
+        result.valid = false;
+      }
+    });
+
+    return {
+      results,
+      valid: results.every((r) => r.valid),
+      summary: {
+        total: results.length,
+        valid: results.filter((r) => r.valid).length,
+        invalid: results.filter((r) => !r.valid).length,
+        empty: results.filter((r) => r.errors.includes("空行，已跳过")).length,
+      },
+    };
+  }
+
+  function compareCSVMarks(localMarks, csvParseResult) {
+    const { marks, headers, mapping } = csvParseResult;
+    const validation = validateCSVMarks(marks, headers, mapping);
+    const localByCode = new Map(localMarks.map((m) => [m.code, m]));
+
+    const validMarks = validation.results
+      .filter((r) => r.valid)
+      .map((r) => {
+        const cleanMark = { ...r.mark };
+        delete cleanMark._csvLineNumber;
+        delete cleanMark._rawRow;
+        return cleanMark;
+      });
+
+    const newMarks = [];
+    const conflicts = [];
+    const errors = validation.results
+      .filter((r) => !r.valid)
+      .map((r) => ({
+        index: r.index,
+        mark: r.mark,
+        errors: r.errors,
+        lineNumber: r.lineNumber,
+        rawRow: r.rawRow,
+      }));
+
+    validMarks.forEach((mark) => {
+      const localMark = localByCode.get(mark.code);
+      if (localMark) {
+        conflicts.push({
+          local: localMark,
+          imported: mark,
+          resolution: "keep",
+          reviewDiff: getReviewStatusDiff(localMark, mark),
+        });
+      } else {
+        newMarks.push(mark);
+      }
+    });
+
+    return {
+      isCSV: true,
+      headers,
+      mapping,
+      newMarks,
+      conflicts,
+      errors,
+      valid: true,
+      csvValidation: validation,
+      summary: {
+        total: marks.length,
+        new: newMarks.length,
+        conflict: conflicts.length,
+        error: errors.length,
+      },
+    };
+  }
+
   return {
     validateMark,
     validateMarkArray,
@@ -720,6 +870,8 @@ const Validation = (() => {
     addNewMeasurements,
     generateNewCode,
     getReviewStatusDiff,
+    validateCSVMarks,
+    compareCSVMarks,
     VALID_TYPES,
     VALID_REVIEW_STATUSES,
     VALID_WEATHER,

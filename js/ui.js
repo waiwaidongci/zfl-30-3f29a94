@@ -38,6 +38,7 @@ const UI = (() => {
       listTitle: document.querySelector("#listTitle"),
       exportBtn: document.querySelector("#exportBtn"),
       importBtn: document.querySelector("#importBtn"),
+      importCSVBtn: document.querySelector("#importCSVBtn"),
       deleteBtn: document.querySelector("#deleteBtn"),
       mapStats: document.querySelector("#mapStats"),
       tabs: document.querySelectorAll(".tab"),
@@ -240,6 +241,14 @@ const UI = (() => {
     elements.importBtn.onclick = () => {
       callbacks.onImport();
     };
+
+    if (elements.importCSVBtn) {
+      elements.importCSVBtn.onclick = () => {
+        if (callbacks.onImportCSV) {
+          callbacks.onImportCSV();
+        }
+      };
+    }
 
     elements.addAttachmentBtn.onclick = handleAddAttachment;
 
@@ -2075,6 +2084,330 @@ const UI = (() => {
     }));
   }
 
+  const CSV_FIELD_LABELS = {
+    code: "编号",
+    type: "类型",
+    dive: "潜次",
+    depth: "深度",
+    x: "X坐标",
+    y: "Y坐标",
+    orientation: "朝向",
+    condition: "保存状态",
+    note: "备注",
+  };
+
+  const CSV_FIELDS_ORDER = [
+    "code",
+    "type",
+    "dive",
+    "depth",
+    "x",
+    "y",
+    "orientation",
+    "condition",
+    "note",
+  ];
+
+  function showCSVFieldMappingPreview(csvParseResult, onConfirm, onCancel) {
+    const { headers, mapping, rows } = csvParseResult;
+    const currentMapping = { ...mapping };
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-csv";
+
+    let html = "<h2>CSV 字段映射</h2>";
+    html += '<div class="muted" style="margin-bottom:16px;">请确认 CSV 列与系统字段的对应关系，可通过下拉菜单调整。</div>';
+
+    html += '<div class="csv-mapping-section">';
+    html += '<h3>字段映射</h3>';
+    html += '<div class="csv-mapping-grid">';
+    CSV_FIELDS_ORDER.forEach((field) => {
+      const label = CSV_FIELD_LABELS[field];
+      const isRequired = ["code", "type", "dive", "depth"].includes(field);
+      const currentHeader = currentMapping[field] || "";
+
+      html += '<div class="csv-mapping-row">';
+      html += '<div class="csv-mapping-label">';
+      html += '<span>' + label + '</span>';
+      if (isRequired) html += '<span class="csv-required">*</span>';
+      html += '</div>';
+      html += '<select data-mapping-field="' + field + '">';
+      html += '<option value="">-- 不映射 --</option>';
+      headers.forEach((h) => {
+        html += '<option value="' + h + '"' + (currentHeader === h ? " selected" : "") + ">" + h + "</option>";
+      });
+      html += "</select>";
+      html += "</div>";
+    });
+    html += "</div>";
+    html += "</div>";
+
+    html += '<div class="csv-preview-section">';
+    html += '<h3>数据预览（前 ' + Math.min(rows.length, 5) + ' 行）</h3>';
+    html += '<div class="csv-preview-table-wrapper">';
+    html += '<table class="csv-preview-table">';
+    html += "<thead><tr>";
+    html += '<th style="width:50px;">行号</th>';
+    headers.forEach((h) => {
+      html += "<th>" + h + "</th>";
+    });
+    html += "</tr></thead>";
+    html += "<tbody>";
+    rows.slice(0, 5).forEach((row, idx) => {
+      html += "<tr>";
+      html += '<td class="csv-row-num">' + (idx + 2) + "</td>";
+      headers.forEach((h) => {
+        const val = row[h] || "";
+        html += "<td>" + (val.length > 20 ? val.slice(0, 20) + "..." : val) + "</td>";
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    html += "</div>";
+    html += "</div>";
+
+    html += '<div class="toolbar" style="margin-top:16px">';
+    html += '<button type="button" id="confirmCSVMappingBtn">确认映射并继续</button>';
+    html += '<button type="button" class="secondary" id="cancelCSVMappingBtn">取消</button>';
+    html += "</div>";
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    modal.querySelectorAll("[data-mapping-field]").forEach((select) => {
+      select.onchange = (e) => {
+        const field = e.target.dataset.mappingField;
+        currentMapping[field] = e.target.value || undefined;
+      };
+    });
+
+    modal.querySelector("#confirmCSVMappingBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+      onConfirm(currentMapping);
+    };
+
+    modal.querySelector("#cancelCSVMappingBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+      onCancel();
+    };
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+        onCancel();
+      }
+    };
+  }
+
+  function showCSVImportPreview(csvParseResult, comparison, onConfirm, onCancel) {
+    const { headers, mapping } = csvParseResult;
+    const markResolutions = (comparison.conflicts || []).map(() => "keep");
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    let html = "<h2>CSV 导入预览</h2>";
+
+    html += '<div class="summary-bar">';
+    html += '<span class="pill">CSV 格式</span>';
+    html += '<span class="pill">共 ' + comparison.summary.total + " 条记录</span>";
+    html += "</div>";
+
+    html += '<div class="preview-section">';
+    html += '<h3>字段映射</h3>';
+    html += '<div class="csv-mapping-summary">';
+    CSV_FIELDS_ORDER.forEach((field) => {
+      const label = CSV_FIELD_LABELS[field];
+      const mappedHeader = mapping[field] || "未映射";
+      const isRequired = ["code", "type", "dive", "depth"].includes(field);
+      html += '<div class="csv-mapping-summary-item">';
+      html += '<span class="csv-mapping-field-label">' + label + (isRequired ? "*" : "") + "</span>";
+      html += '<span class="csv-mapping-arrow">→</span>';
+      html += '<span class="csv-mapping-header ' + (mapping[field] ? "" : "csv-unmapped") + '">' + mappedHeader + "</span>";
+      html += "</div>";
+    });
+    html += "</div>";
+    html += "</div>";
+
+    const markComparison = comparison;
+
+    html += '<div class="preview-section">';
+    html += '<h3>标记数据</h3>';
+    html += '<div class="summary-bar">';
+    html += '<span class="pill">共 ' + markComparison.summary.total + " 项</span>";
+    html += '<span class="pill pill-new">新增 ' + markComparison.summary.new + " 项</span>";
+    html += '<span class="pill pill-conflict">冲突 ' + markComparison.summary.conflict + " 项</span>";
+    html += '<span class="pill pill-error">错误 ' + markComparison.summary.error + " 项</span>";
+    html += "</div>";
+
+    if (markComparison.newMarks.length > 0) {
+      html += '<div class="preview-list">';
+      markComparison.newMarks.forEach((mark) => {
+        html +=
+          '<div class="preview-item"><span><b>' +
+          mark.code +
+          "</b> " +
+          (typeNames[mark.type] || mark.type) +
+          ' · ' +
+          mark.dive +
+          " · " +
+          mark.depth +
+          "</span><span class='pill pill-new'>新增</span></div>";
+      });
+      html += "</div>";
+    }
+
+    if (markComparison.conflicts.length > 0) {
+      html += '<div class="toolbar-3">';
+      html += '<button type="button" class="secondary" data-bulk-mark-csv="keep">全部保留本地</button>';
+      html += '<button type="button" class="secondary" data-bulk-mark-csv="overwrite">全部覆盖本地</button>';
+      html += '<button type="button" class="secondary" data-bulk-mark-csv="saveas">全部另存新编号</button>';
+      html += "</div>";
+      html += '<div class="preview-list">';
+      markComparison.conflicts.forEach((conflict, idx) => {
+        const diff = conflict.reviewDiff;
+        let reviewDiffHtml = "";
+        if (diff && (diff.statusChanged || diff.commentChanged || diff.reviewerChanged)) {
+          reviewDiffHtml = '<div class="conflict-review-diff">';
+          if (diff.statusChanged) {
+            reviewDiffHtml += '<div class="review-diff-row">';
+            reviewDiffHtml += '<span class="muted small">状态:</span>';
+            reviewDiffHtml +=
+              '<span class="pill pill-review pill-review-' +
+              diff.localStatus +
+              '">本地:' +
+              reviewStatusNames[diff.localStatus] +
+              "</span>";
+            reviewDiffHtml += '<span class="review-arrow">→</span>';
+            reviewDiffHtml +=
+              '<span class="pill pill-review pill-review-' +
+              diff.importedStatus +
+              '">导入:' +
+              reviewStatusNames[diff.importedStatus] +
+              "</span>";
+            reviewDiffHtml += "</div>";
+          }
+          if (diff.commentChanged) {
+            reviewDiffHtml += '<div class="review-diff-row">';
+            reviewDiffHtml += '<span class="muted small">意见:</span>';
+            reviewDiffHtml +=
+              '<span class="conflict-local-val" title="' +
+              (diff.localComment || "无").replace(/"/g, "&quot;") +
+              '">本地: ' +
+              ((diff.localComment && diff.localComment.length > 20)
+                ? diff.localComment.slice(0, 20) + "..."
+                : diff.localComment || "无") +
+              "</span>";
+            reviewDiffHtml += '<span class="review-arrow">→</span>';
+            reviewDiffHtml +=
+              '<span class="conflict-imported-val" title="' +
+              (diff.importedComment || "无").replace(/"/g, "&quot;") +
+              '">导入: ' +
+              ((diff.importedComment && diff.importedComment.length > 20)
+                ? diff.importedComment.slice(0, 20) + "..."
+                : diff.importedComment || "无") +
+              "</span>";
+            reviewDiffHtml += "</div>";
+          }
+          if (diff.reviewerChanged) {
+            reviewDiffHtml += '<div class="review-diff-row">';
+            reviewDiffHtml += '<span class="muted small">审核人:</span>';
+            reviewDiffHtml += '<span class="conflict-local-val">本地: ' + (diff.localReviewer || "未指定") + "</span>";
+            reviewDiffHtml += '<span class="review-arrow">→</span>';
+            reviewDiffHtml += '<span class="conflict-imported-val">导入: ' + (diff.importedReviewer || "未指定") + "</span>";
+            reviewDiffHtml += "</div>";
+          }
+          reviewDiffHtml += "</div>";
+        }
+        html +=
+          '<div class="preview-item preview-item-conflict" data-mark-conflict-csv-index="' +
+          idx +
+          '"><div class="preview-item-main"><span><b>' +
+          conflict.imported.code +
+          "</b> " +
+          (typeNames[conflict.imported.type] || conflict.imported.type) +
+          ' · ' +
+          conflict.imported.dive +
+          "</span>";
+        html += '<select data-mark-csv-resolution-index="' + idx + '">';
+        html += '<option value="keep">保留本地</option>';
+        html += '<option value="overwrite">覆盖本地</option>';
+        html += '<option value="saveas">另存为新编号</option>';
+        html += "</select></div>" + reviewDiffHtml + "</div>";
+      });
+      html += "</div>";
+    }
+
+    if (markComparison.errors.length > 0) {
+      html += '<div class="preview-list">';
+      markComparison.errors.forEach((err) => {
+        const lineInfo = err.lineNumber ? " (第 " + err.lineNumber + " 行)" : "";
+        const code = err.mark && err.mark.code ? err.mark.code : "第 " + (err.index + 1) + " 项";
+        html +=
+          '<div class="preview-item"><span><b>' +
+          code +
+          "</b>" +
+          lineInfo +
+          "</span><span class='muted'>" +
+          err.errors.join("; ") +
+          "</span></div>";
+      });
+      html += "</div>";
+    }
+    html += "</div>";
+
+    html += '<div class="toolbar">';
+    html += '<button type="button" id="confirmCSVImportBtn">确认导入</button>';
+    html += '<button type="button" class="secondary" id="cancelCSVImportBtn">取消</button>';
+    html += "</div>";
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    modal.querySelectorAll("[data-mark-csv-resolution-index]").forEach((select) => {
+      select.onchange = (e) => {
+        const idx = parseInt(e.target.dataset.markCsvResolutionIndex);
+        markResolutions[idx] = e.target.value;
+      };
+    });
+
+    modal.querySelectorAll("[data-bulk-mark-csv]").forEach((btn) => {
+      btn.onclick = (e) => {
+        const action = e.target.dataset.bulkMarkCsv;
+        (comparison.conflicts || []).forEach((_, idx) => {
+          markResolutions[idx] = action;
+          const select = modal.querySelector('[data-mark-csv-resolution-index="' + idx + '"]');
+          if (select) select.value = action;
+        });
+      };
+    });
+
+    modal.querySelector("#confirmCSVImportBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+      onConfirm({ markResolutions, diveResolutions: [], measurementResolutions: [] });
+    };
+
+    modal.querySelector("#cancelCSVImportBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+      onCancel();
+    };
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+        onCancel();
+      }
+    };
+  }
+
   return {
     init,
     updateState,
@@ -2089,6 +2422,8 @@ const UI = (() => {
     resetDiveForm,
     resetMeasureForm,
     showImportPreview,
+    showCSVFieldMappingPreview,
+    showCSVImportPreview,
     showToast,
     switchTab,
     renderAttachments,

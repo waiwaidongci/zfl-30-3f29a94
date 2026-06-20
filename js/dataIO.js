@@ -314,6 +314,193 @@ const DataIO = (() => {
     return triggerFileInput("image/*");
   }
 
+  const CSV_COLUMN_MAPPINGS = {
+    code: ["编号", "编号", "code", "id", "编号code", "标记编号", "标本编号"],
+    type: ["类型", "类别", "type", "category", "种类", "文物类型"],
+    dive: ["潜次", "潜次编号", "dive", "diveCode", "潜水批次", "潜次号"],
+    depth: ["深度", "水深", "depth", "深度m", "深度(米)", "埋藏深度"],
+    x: ["x坐标", "x", "经度", "横坐标", "位置x", "x轴", "X坐标"],
+    y: ["y坐标", "y", "纬度", "纵坐标", "位置y", "y轴", "Y坐标"],
+    orientation: ["朝向", "方向", "orientation", "direction", "方位", "摆放方向"],
+    condition: ["保存状态", "保存状况", "condition", "状态", "保存情况", "文物状态"],
+    note: ["备注", "说明", "note", "remark", "comment", "描述", "附注"],
+  };
+
+  const TYPE_NAME_MAPPINGS = {
+    "陶片": "ceramic",
+    "陶瓷": "ceramic",
+    "瓷器": "ceramic",
+    "ceramic": "ceramic",
+    "木构件": "wood",
+    "木材": "wood",
+    "木质": "wood",
+    "wood": "wood",
+    "金属件": "metal",
+    "金属": "metal",
+    "铁器": "metal",
+    "铜器": "metal",
+    "metal": "metal",
+    "未知物": "unknown",
+    "未知": "unknown",
+    "其他": "unknown",
+    "unknown": "unknown",
+  };
+
+  function parseCSVLine(line) {
+    const result = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+
+      if (inQuotes) {
+        if (char === '"') {
+          if (nextChar === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += char;
+        }
+      } else {
+        if (char === '"') {
+          inQuotes = true;
+        } else if (char === ",") {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+    if (lines.length === 0) {
+      return { success: false, error: "CSV 文件为空" };
+    }
+
+    const headers = parseCSVLine(lines[0]);
+    const rows = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      if (values.every((v) => v.trim() === "")) continue;
+      const row = {};
+      headers.forEach((header, idx) => {
+        row[header] = values[idx] || "";
+      });
+      rows.push(row);
+    }
+
+    return { success: true, headers, rows };
+  }
+
+  function detectColumnMapping(headers) {
+    const mapping = {};
+    const usedHeaders = new Set();
+
+    for (const [field, possibleNames] of Object.entries(CSV_COLUMN_MAPPINGS)) {
+      for (const name of possibleNames) {
+        const matched = headers.find(
+          (h) => !usedHeaders.has(h) && h.toLowerCase().trim() === name.toLowerCase().trim()
+        );
+        if (matched) {
+          mapping[field] = matched;
+          usedHeaders.add(matched);
+          break;
+        }
+      }
+    }
+
+    return mapping;
+  }
+
+  function mapType(rawType) {
+    if (!rawType) return "unknown";
+    const cleaned = rawType.trim().toLowerCase();
+    for (const [name, value] of Object.entries(TYPE_NAME_MAPPINGS)) {
+      if (name.toLowerCase() === cleaned) {
+        return value;
+      }
+    }
+    return rawType.trim();
+  }
+
+  function parseCoordinate(raw) {
+    if (!raw || raw.trim() === "") return null;
+    const num = Number(raw);
+    if (isNaN(num)) return null;
+    return num;
+  }
+
+  function applyColumnMapping(row, mapping) {
+    const result = {};
+    for (const [field, header] of Object.entries(mapping)) {
+      if (row[header] !== undefined) {
+        result[field] = row[header];
+      }
+    }
+    return result;
+  }
+
+  function convertCSVRowToMark(rawRow, mapping, lineNumber) {
+    const mapped = applyColumnMapping(rawRow, mapping);
+    const mark = {
+      code: mapped.code ? mapped.code.trim() : "",
+      type: mapType(mapped.type),
+      dive: mapped.dive ? mapped.dive.trim() : "",
+      depth: mapped.depth ? mapped.depth.trim() : "",
+      orientation: mapped.orientation ? mapped.orientation.trim() : "",
+      condition: mapped.condition ? mapped.condition.trim() : "",
+      note: mapped.note ? mapped.note.trim() : "",
+    };
+
+    if (mapped.x !== undefined) {
+      const x = parseCoordinate(mapped.x);
+      if (x !== null) mark.x = x;
+    }
+    if (mapped.y !== undefined) {
+      const y = parseCoordinate(mapped.y);
+      if (y !== null) mark.y = y;
+    }
+
+    mark._csvLineNumber = lineNumber;
+    mark._rawRow = { ...rawRow };
+    return mark;
+  }
+
+  function parseCSVToMarks(text) {
+    const parsed = parseCSV(text);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error };
+    }
+
+    const mapping = detectColumnMapping(parsed.headers);
+    const marks = parsed.rows.map((row, idx) =>
+      convertCSVRowToMark(row, mapping, idx + 2)
+    );
+
+    return {
+      success: true,
+      headers: parsed.headers,
+      mapping,
+      rows: parsed.rows,
+      marks,
+    };
+  }
+
+  function triggerCSVInput() {
+    return triggerFileInput(".csv,text/csv,application/vnd.ms-excel");
+  }
+
   return {
     loadMarks,
     saveMarks,
@@ -346,5 +533,13 @@ const DataIO = (() => {
     THUMBNAIL_MAX_SIZE,
     MAX_IMAGE_SIZE_MB,
     STORAGE_WARNING_THRESHOLD,
+    parseCSV,
+    parseCSVToMarks,
+    detectColumnMapping,
+    mapType,
+    parseCoordinate,
+    triggerCSVInput,
+    CSV_COLUMN_MAPPINGS,
+    TYPE_NAME_MAPPINGS,
   };
 })();
