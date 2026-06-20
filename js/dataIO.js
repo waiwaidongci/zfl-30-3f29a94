@@ -245,7 +245,7 @@ const DataIO = (() => {
     if (typeof MergeModule !== "undefined" && typeof MergeModule.isOfflineMergeFormat === "function") {
       return MergeModule.isOfflineMergeFormat(data);
     }
-    return data && typeof data === "object" && data.format === "offline-merge" && data.snapshot && data.changeLog;
+    return !!(data && typeof data === "object" && data.format === "offline-merge" && data.snapshot && data.changeLog);
   }
 
   function readFileAsDataURL(file) {

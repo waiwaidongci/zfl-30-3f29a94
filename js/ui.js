@@ -1970,7 +1970,7 @@ const UI = (() => {
       modified: (analysis.marks?.modified || []).map(() => "keep"),
       deleted: (analysis.marks?.deleted || []).map(() => "keep"),
       diverged: (analysis.marks?.diverged || []).map(() => "saveas"),
-      positionDuplicates: (analysis.marks?.positionDuplicates || []).map(() => "review"),
+      positionDuplicates: (analysis.marks?.positionDuplicates || []).map(() => "skip"),
     };
 
     const diveResolutions = {
@@ -2140,9 +2140,9 @@ const UI = (() => {
             { value: "saveas", label: "另存新编号" },
           ],
           positionDuplicates: [
-            { value: "review", label: "待审核" },
-            { value: "add", label: "添加为新标记" },
             { value: "skip", label: "跳过" },
+            { value: "merge", label: "合并到本地" },
+            { value: "keepboth", label: "两者都保留" },
           ],
         },
         dives: {

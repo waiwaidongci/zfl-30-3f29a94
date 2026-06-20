@@ -106,7 +106,7 @@ const MergeModule = (() => {
   }
 
   function isOfflineMergeFormat(data) {
-    return (
+    return !!(
       data &&
       typeof data === "object" &&
       data.format === "offline-merge" &&
@@ -329,11 +329,15 @@ const MergeModule = (() => {
         result.marks.diverged.some((m) => m.imported.id === dup.mark2.id);
 
       if (isNewOrModified) {
+        const diff = getMarkDiff(dup.mark1, dup.mark2);
         result.marks.positionDuplicates.push({
           localMark: dup.mark1,
           importedMark: dup.mark2,
+          local: dup.mark1,
+          imported: dup.mark2,
           distance: dup.distance,
-          resolution: "review",
+          diff: diff,
+          resolution: "skip",
         });
       }
     });
@@ -741,6 +745,75 @@ const MergeModule = (() => {
               oldMark,
               null
             );
+          }
+        }
+      });
+
+      const positionDuplicates = analysis.marks.positionDuplicates || [];
+      positionDuplicates.forEach((item, idx) => {
+        const res =
+          markResolutions?.positionDuplicates?.[idx] || item.resolution || "skip";
+        if (res === "skip") {
+          return;
+        } else if (res === "merge") {
+          const idx2 = updatedMarks.findIndex(
+            (m) => m.id === item.localMark.id || m.code === item.localMark.code
+          );
+          if (idx2 !== -1) {
+            const oldMark = { ...updatedMarks[idx2] };
+            const imported = DataIO.ensureReviewData
+              ? DataIO.ensureReviewData({ ...item.importedMark })
+              : { ...item.importedMark };
+
+            const mergedMark = { ...oldMark };
+            const ignoreKeys = ["id", "code", "x", "y"];
+            Object.keys(imported).forEach((key) => {
+              if (ignoreKeys.includes(key)) return;
+              if (mergedMark[key] === undefined || mergedMark[key] === null || mergedMark[key] === "") {
+                mergedMark[key] = imported[key];
+              }
+            });
+
+            if (!mergedMark.note) mergedMark.note = "";
+            const mergeNote = `[合并自位置重复标记 ${imported.code}]`;
+            mergedMark.note = mergedMark.note
+              ? `${mergedMark.note}\n${mergeNote}`
+              : mergeNote;
+
+            updatedMarks[idx2] = mergedMark;
+            recordChange(
+              "mark",
+              "modify",
+              mergedMark.id,
+              mergedMark.code,
+              oldMark,
+              mergedMark
+            );
+          }
+        } else if (res === "keepboth") {
+          const localIdx = updatedMarks.findIndex(
+            (m) => m.id === item.localMark.id || m.code === item.localMark.code
+          );
+          const importIdx = updatedMarks.findIndex(
+            (m) => m.id === item.importedMark.id || m.code === item.importedMark.code
+          );
+
+          if (localIdx !== -1 && importIdx === -1) {
+            const existingCodes = new Set(updatedMarks.map((m) => m.code));
+            const newCode = generateNewMergeCode(existingCodes, item.importedMark.code);
+            existingCodes.add(newCode);
+            const imported = DataIO.ensureReviewData
+              ? DataIO.ensureReviewData({ ...item.importedMark })
+              : { ...item.importedMark };
+            const newMark = {
+              ...imported,
+              id: crypto.randomUUID(),
+              code: newCode,
+              x: imported.x ?? 50,
+              y: imported.y ?? 50,
+            };
+            updatedMarks.push(newMark);
+            recordChange("mark", "add", newMark.id, newCode, null, newMark);
           }
         }
       });

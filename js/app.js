@@ -153,6 +153,12 @@ const App = (() => {
       handleDeleteMeasurement(e.detail.id);
     });
 
+    function recordChange(entityType, action, entityId, entityCode, beforeData, afterData) {
+      if (typeof MergeModule !== "undefined" && typeof MergeModule.recordChange === "function") {
+        MergeModule.recordChange(entityType, action, entityId, entityCode, beforeData, afterData);
+      }
+    }
+
     callbacks = {
       onSaveMark: handleSaveMark,
       onDeleteMark: handleDeleteMark,
@@ -365,12 +371,14 @@ const App = (() => {
     if (data.id) {
       const mark = marks.find((m) => m.id === data.id);
       if (mark) {
+        const beforeData = JSON.parse(JSON.stringify(mark));
         Object.assign(mark, data, pendingPos);
         mark.attachments = attachments;
         mark.review = buildReviewFromForm(
           { reviewStatus, reviewComment, reviewer },
           mark
         );
+        recordChange("mark", "modify", mark.id, mark.code, beforeData, mark);
       }
     } else {
       const newMark = {
@@ -384,6 +392,7 @@ const App = (() => {
         null
       );
       marks.push(newMark);
+      recordChange("mark", "add", newMark.id, newMark.code, null, newMark);
     }
     save();
     UI.updateState(marks, dives, measurements, scale, gridConfig, pending, data.id || null);
@@ -398,6 +407,7 @@ const App = (() => {
       mark.review = DataIO.getDefaultReview ? DataIO.getDefaultReview() : getDefaultReview();
     }
 
+    const beforeData = JSON.parse(JSON.stringify(mark));
     const oldStatus = mark.review.status || "collected";
     const now = new Date().toISOString();
 
@@ -418,12 +428,18 @@ const App = (() => {
       reviewer: mark.review.reviewer,
     });
 
+    recordChange("mark", "modify", mark.id, mark.code, beforeData, mark);
+
     save();
     UI.updateState(marks, dives, measurements, scale, gridConfig, pending, markId);
     UI.showToast(`状态已变更为「${UI.reviewStatusNames[newStatus]}」`, "success");
   }
 
   function handleDeleteMark(id) {
+    const mark = marks.find((m) => m.id === id);
+    if (mark) {
+      recordChange("mark", "delete", mark.id, mark.code, mark, null);
+    }
     marks = marks.filter((m) => m.id !== id);
     UI.resetForm();
     save();
@@ -436,27 +452,35 @@ const App = (() => {
     if (data.id) {
       const dive = dives.find((d) => d.id === data.id);
       if (dive) {
+        const beforeData = JSON.parse(JSON.stringify(dive));
         Object.assign(dive, data);
         if (oldCode && oldCode !== data.code) {
           marks.forEach(m => {
             if (m.dive === oldCode) {
+              const beforeMark = JSON.parse(JSON.stringify(m));
               m.dive = data.code;
+              recordChange("mark", "modify", m.id, m.code, beforeMark, m);
             }
           });
           measurements.forEach(m => {
             if (m.dive === oldCode) {
+              const beforeMeas = JSON.parse(JSON.stringify(m));
               m.dive = data.code;
+              recordChange("measurement", "modify", m.id, m.code, beforeMeas, m);
             }
           });
           save();
           saveMeasurements();
         }
+        recordChange("dive", "modify", dive.id, dive.code, beforeData, dive);
       }
     } else {
-      dives.push({
+      const newDive = {
         ...data,
         id: crypto.randomUUID(),
-      });
+      };
+      dives.push(newDive);
+      recordChange("dive", "add", newDive.id, newDive.code, null, newDive);
     }
     saveDives();
     UI.resetDiveForm();
@@ -477,18 +501,23 @@ const App = (() => {
       }
       marks.forEach(m => {
         if (m.dive === dive.code) {
+          const beforeMark = JSON.parse(JSON.stringify(m));
           m.dive = "";
+          recordChange("mark", "modify", m.id, m.code, beforeMark, m);
         }
       });
       measurements.forEach(m => {
         if (m.dive === dive.code) {
+          const beforeMeas = JSON.parse(JSON.stringify(m));
           m.dive = "";
+          recordChange("measurement", "modify", m.id, m.code, beforeMeas, m);
         }
       });
       save();
       saveMeasurements();
     }
 
+    recordChange("dive", "delete", dive.id, dive.code, dive, null);
     dives = dives.filter((d) => d.id !== id);
     UI.resetDiveForm();
     saveDives();
@@ -511,14 +540,18 @@ const App = (() => {
     if (data.id) {
       const measurement = measurements.find((m) => m.id === data.id);
       if (measurement) {
+        const beforeData = JSON.parse(JSON.stringify(measurement));
         Object.assign(measurement, data);
+        recordChange("measurement", "modify", measurement.id, measurement.code, beforeData, measurement);
       }
     } else {
-      measurements.push({
+      const newMeasurement = {
         ...data,
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
-      });
+      };
+      measurements.push(newMeasurement);
+      recordChange("measurement", "add", newMeasurement.id, newMeasurement.code, null, newMeasurement);
     }
     saveMeasurements();
     UI.resetMeasureForm();
@@ -527,6 +560,10 @@ const App = (() => {
   }
 
   function handleDeleteMeasurement(id) {
+    const measurement = measurements.find((m) => m.id === id);
+    if (measurement) {
+      recordChange("measurement", "delete", measurement.id, measurement.code, measurement, null);
+    }
     measurements = measurements.filter((m) => m.id !== id);
     UI.resetMeasureForm();
     saveMeasurements();
@@ -1049,6 +1086,10 @@ const App = (() => {
   function applyOfflineMerge(analysis, resolutions) {
     if (typeof MergeModule === "undefined") return;
 
+    if (typeof UI.hideRollbackNotice === "function") {
+      UI.hideRollbackNotice();
+    }
+
     MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig);
 
     const localData = {
@@ -1155,6 +1196,9 @@ const App = (() => {
     );
 
     MergeModule.clearSnapshot();
+    if (typeof UI.hideRollbackNotice === "function") {
+      UI.hideRollbackNotice();
+    }
 
     UI.showToast("已撤销合并，数据已恢复", "success");
   }
