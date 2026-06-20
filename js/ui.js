@@ -26,6 +26,15 @@ const UI = (() => {
   let measurePoints = [];
   let selectedRelatedMarks = [];
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function init(deps) {
     elements = {
       map: document.querySelector("#map"),
@@ -2137,7 +2146,7 @@ const UI = (() => {
       html += '<select data-mapping-field="' + field + '">';
       html += '<option value="">-- 不映射 --</option>';
       headers.forEach((h) => {
-        html += '<option value="' + h + '"' + (currentHeader === h ? " selected" : "") + ">" + h + "</option>";
+        html += '<option value="' + escapeHtml(h) + '"' + (currentHeader === h ? " selected" : "") + ">" + escapeHtml(h) + "</option>";
       });
       html += "</select>";
       html += "</div>";
@@ -2152,7 +2161,7 @@ const UI = (() => {
     html += "<thead><tr>";
     html += '<th style="width:50px;">行号</th>';
     headers.forEach((h) => {
-      html += "<th>" + h + "</th>";
+      html += "<th>" + escapeHtml(h) + "</th>";
     });
     html += "</tr></thead>";
     html += "<tbody>";
@@ -2161,7 +2170,7 @@ const UI = (() => {
       html += '<td class="csv-row-num">' + (idx + 2) + "</td>";
       headers.forEach((h) => {
         const val = row[h] || "";
-        html += "<td>" + (val.length > 20 ? val.slice(0, 20) + "..." : val) + "</td>";
+        html += "<td>" + escapeHtml(val.length > 20 ? val.slice(0, 20) + "..." : val) + "</td>";
       });
       html += "</tr>";
     });
@@ -2230,7 +2239,7 @@ const UI = (() => {
       html += '<div class="csv-mapping-summary-item">';
       html += '<span class="csv-mapping-field-label">' + label + (isRequired ? "*" : "") + "</span>";
       html += '<span class="csv-mapping-arrow">→</span>';
-      html += '<span class="csv-mapping-header ' + (mapping[field] ? "" : "csv-unmapped") + '">' + mappedHeader + "</span>";
+      html += '<span class="csv-mapping-header ' + (mapping[field] ? "" : "csv-unmapped") + '">' + escapeHtml(mappedHeader) + "</span>";
       html += "</div>";
     });
     html += "</div>";
@@ -2252,13 +2261,13 @@ const UI = (() => {
       markComparison.newMarks.forEach((mark) => {
         html +=
           '<div class="preview-item"><span><b>' +
-          mark.code +
+          escapeHtml(mark.code) +
           "</b> " +
-          (typeNames[mark.type] || mark.type) +
+          escapeHtml(typeNames[mark.type] || mark.type) +
           ' · ' +
-          mark.dive +
+          escapeHtml(mark.dive) +
           " · " +
-          mark.depth +
+          escapeHtml(mark.depth) +
           "</span><span class='pill pill-new'>新增</span></div>";
       });
       html += "</div>";
@@ -2299,18 +2308,18 @@ const UI = (() => {
             reviewDiffHtml += '<span class="muted small">意见:</span>';
             reviewDiffHtml +=
               '<span class="conflict-local-val" title="' +
-              (diff.localComment || "无").replace(/"/g, "&quot;") +
+              escapeHtml(diff.localComment || "无") +
               '">本地: ' +
-              ((diff.localComment && diff.localComment.length > 20)
+              escapeHtml((diff.localComment && diff.localComment.length > 20)
                 ? diff.localComment.slice(0, 20) + "..."
                 : diff.localComment || "无") +
               "</span>";
             reviewDiffHtml += '<span class="review-arrow">→</span>';
             reviewDiffHtml +=
               '<span class="conflict-imported-val" title="' +
-              (diff.importedComment || "无").replace(/"/g, "&quot;") +
+              escapeHtml(diff.importedComment || "无") +
               '">导入: ' +
-              ((diff.importedComment && diff.importedComment.length > 20)
+              escapeHtml((diff.importedComment && diff.importedComment.length > 20)
                 ? diff.importedComment.slice(0, 20) + "..."
                 : diff.importedComment || "无") +
               "</span>";
@@ -2319,9 +2328,9 @@ const UI = (() => {
           if (diff.reviewerChanged) {
             reviewDiffHtml += '<div class="review-diff-row">';
             reviewDiffHtml += '<span class="muted small">审核人:</span>';
-            reviewDiffHtml += '<span class="conflict-local-val">本地: ' + (diff.localReviewer || "未指定") + "</span>";
+            reviewDiffHtml += '<span class="conflict-local-val">本地: ' + escapeHtml(diff.localReviewer || "未指定") + "</span>";
             reviewDiffHtml += '<span class="review-arrow">→</span>';
-            reviewDiffHtml += '<span class="conflict-imported-val">导入: ' + (diff.importedReviewer || "未指定") + "</span>";
+            reviewDiffHtml += '<span class="conflict-imported-val">导入: ' + escapeHtml(diff.importedReviewer || "未指定") + "</span>";
             reviewDiffHtml += "</div>";
           }
           reviewDiffHtml += "</div>";
@@ -2330,11 +2339,11 @@ const UI = (() => {
           '<div class="preview-item preview-item-conflict" data-mark-conflict-csv-index="' +
           idx +
           '"><div class="preview-item-main"><span><b>' +
-          conflict.imported.code +
+          escapeHtml(conflict.imported.code) +
           "</b> " +
-          (typeNames[conflict.imported.type] || conflict.imported.type) +
+          escapeHtml(typeNames[conflict.imported.type] || conflict.imported.type) +
           ' · ' +
-          conflict.imported.dive +
+          escapeHtml(conflict.imported.dive) +
           "</span>";
         html += '<select data-mark-csv-resolution-index="' + idx + '">';
         html += '<option value="keep">保留本地</option>';
@@ -2352,11 +2361,11 @@ const UI = (() => {
         const code = err.mark && err.mark.code ? err.mark.code : "第 " + (err.index + 1) + " 项";
         html +=
           '<div class="preview-item"><span><b>' +
-          code +
+          escapeHtml(code) +
           "</b>" +
           lineInfo +
           "</span><span class='muted'>" +
-          err.errors.join("; ") +
+          escapeHtml(err.errors.join("; ")) +
           "</span></div>";
       });
       html += "</div>";
