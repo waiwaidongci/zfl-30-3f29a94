@@ -4978,6 +4978,12 @@ const UI = (() => {
 
     let html = '<h2>多遗址项目管理</h2>';
 
+    html += '<div class="project-manager-tabs">';
+    html += '<button class="project-tab active" data-tab="projects">项目列表</button>';
+    html += '<button class="project-tab" data-tab="history">版本历史</button>';
+    html += '</div>';
+
+    html += '<div class="project-tab-content" data-tab-content="projects">';
     html += '<div class="project-create-row">';
     html += '<input type="text" id="newProjectNameInput" placeholder="输入新遗址项目名称">';
     html += '<button id="createProjectBtn">创建项目</button>';
@@ -5030,6 +5036,38 @@ const UI = (() => {
     html += '</div>';
 
     html += '<div class="project-list-footer muted">项目数据存储在浏览器本地，清除浏览器数据将导致数据丢失，请定期导出备份。</div>';
+    html += '</div>';
+
+    html += '<div class="project-tab-content hidden" data-tab-content="history">';
+    html += '<div class="snapshot-toolbar">';
+    html += '<button id="createManualSnapshotBtn" class="primary">📸 创建快照</button>';
+    html += '<button id="importSnapshotBtn" class="secondary">导入快照</button>';
+    html += '<div class="snapshot-stats" id="snapshotStats"></div>';
+    html += '</div>';
+    html += '<div class="snapshot-filters">';
+    html += '<input type="text" id="snapshotSearch" placeholder="搜索历史记录...">';
+    html += '<select id="snapshotEntityFilter">';
+    html += '<option value="">全部类型</option>';
+    html += '<option value="mark">标记</option>';
+    html += '<option value="dive">潜次</option>';
+    html += '<option value="measurement">测距</option>';
+    html += '<option value="scale">比例尺</option>';
+    html += '<option value="grid">网格</option>';
+    html += '<option value="projectConfig">项目配置</option>';
+    html += '</select>';
+    html += '<select id="snapshotActionFilter">';
+    html += '<option value="">全部操作</option>';
+    html += '<option value="add">新增</option>';
+    html += '<option value="modify">编辑</option>';
+    html += '<option value="delete">删除</option>';
+    html += '<option value="merge">合并</option>';
+    html += '<option value="import">导入</option>';
+    html += '<option value="rollback">回滚</option>';
+    html += '</select>';
+    html += '</div>';
+    html += '<div id="timelineContainer" class="timeline-container"></div>';
+    html += '<div id="snapshotDetailModal" class="snapshot-detail-modal hidden"></div>';
+    html += '</div>';
 
     modal.innerHTML = html;
 
@@ -5108,6 +5146,342 @@ const UI = (() => {
         }
       };
     });
+
+    modal.querySelectorAll(".project-tab").forEach(tab => {
+      tab.onclick = () => {
+        const tabId = tab.dataset.tab;
+        modal.querySelectorAll(".project-tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        modal.querySelectorAll(".project-tab-content").forEach(content => {
+          if (content.dataset.tabContent === tabId) {
+            content.classList.remove("hidden");
+          } else {
+            content.classList.add("hidden");
+          }
+        });
+        if (tabId === "history") {
+          renderTimeline(modal);
+        }
+      };
+    });
+
+    const createManualSnapshotBtn = modal.querySelector("#createManualSnapshotBtn");
+    if (createManualSnapshotBtn) {
+      createManualSnapshotBtn.onclick = () => {
+        const desc = prompt("请输入快照描述（可选）：", "");
+        if (callbacks.onCreateManualSnapshot) {
+          callbacks.onCreateManualSnapshot(desc || null);
+          renderTimeline(modal);
+        }
+      };
+    }
+
+    const importSnapshotBtn = modal.querySelector("#importSnapshotBtn");
+    if (importSnapshotBtn) {
+      importSnapshotBtn.onclick = () => {
+        if (callbacks.onImportSnapshot) {
+          callbacks.onImportSnapshot().then(() => {
+            renderTimeline(modal);
+          });
+        }
+      };
+    }
+
+    const snapshotSearch = modal.querySelector("#snapshotSearch");
+    if (snapshotSearch) {
+      snapshotSearch.oninput = () => renderTimeline(modal);
+    }
+
+    const snapshotEntityFilter = modal.querySelector("#snapshotEntityFilter");
+    if (snapshotEntityFilter) {
+      snapshotEntityFilter.onchange = () => renderTimeline(modal);
+    }
+
+    const snapshotActionFilter = modal.querySelector("#snapshotActionFilter");
+    if (snapshotActionFilter) {
+      snapshotActionFilter.onchange = () => renderTimeline(modal);
+    }
+  }
+
+  function renderTimeline(modal) {
+    const container = modal.querySelector("#timelineContainer");
+    const statsEl = modal.querySelector("#snapshotStats");
+    if (!container) return;
+
+    const search = modal.querySelector("#snapshotSearch")?.value || "";
+    const entityType = modal.querySelector("#snapshotEntityFilter")?.value || null;
+    const action = modal.querySelector("#snapshotActionFilter")?.value || null;
+
+    if (callbacks.onGetSnapshotStorageStats) {
+      const stats = callbacks.onGetSnapshotStorageStats();
+      if (stats && statsEl) {
+        statsEl.innerHTML = `<span class="muted">共 ${stats.count} 个快照，占用 ${stats.totalSizeMB} MB</span>`;
+      }
+    }
+
+    if (!callbacks.onGetTimeline) {
+      container.innerHTML = '<div class="muted">快照模块未加载</div>';
+      return;
+    }
+
+    const timeline = callbacks.onGetTimeline({
+      limit: 100,
+      entityType,
+      action,
+      search,
+    });
+
+    if (!timeline || timeline.items.length === 0) {
+      container.innerHTML = '<div class="muted timeline-empty">暂无历史记录，开始操作后将自动记录</div>';
+      return;
+    }
+
+    let html = '<div class="timeline">';
+    let currentDate = null;
+
+    timeline.items.forEach((item) => {
+      const itemDate = new Date(item.timestamp).toLocaleDateString();
+      if (itemDate !== currentDate) {
+        currentDate = itemDate;
+        html += '<div class="timeline-date">' + currentDate + '</div>';
+      }
+
+      const time = new Date(item.timestamp).toLocaleTimeString();
+      const iconClass = getTimelineIconClass(item.action, item.entityType);
+      const tagHtml = item.tags && item.tags.length > 0
+        ? item.tags.map(t => `<span class="timeline-tag tag-${t}">${escapeHtml(t)}</span>`).join("")
+        : "";
+
+      let itemClass = "timeline-item";
+      if (item.isCurrent) itemClass += " timeline-current";
+      if (item.tags && item.tags.includes("merge")) itemClass += " merge-snapshot";
+      if (item.tags && item.tags.includes("import")) itemClass += " import-snapshot";
+      if (item.tags && item.tags.includes("rollback")) itemClass += " rollback-snapshot";
+      if (item.tags && item.tags.includes("manual")) itemClass += " manual-snapshot";
+
+      html += '<div class="' + itemClass + '" data-id="' + item.id + '">';
+      html += '<div class="timeline-marker ' + iconClass + '"></div>';
+      html += '<div class="timeline-content">';
+      html += '<div class="timeline-header">';
+      html += '<span class="timeline-time">' + time + '</span>';
+      if (item.isCurrent) {
+        html += '<span class="pill pill-new">当前版本</span>';
+      }
+      html += tagHtml;
+      html += '</div>';
+      html += '<div class="timeline-description">' + escapeHtml(item.description) + '</div>';
+      if (item.entityCode) {
+        html += '<div class="timeline-entity muted">实体：' + escapeHtml(item.entityCode) + '</div>';
+      }
+      html += '<div class="timeline-actions">';
+      html += '<button class="secondary small timeline-view-btn" data-id="' + item.id + '">查看详情</button>';
+      if (!item.isCurrent) {
+        html += '<button class="timeline-rollback-btn" data-id="' + item.id + '">回滚到此版本</button>';
+      }
+      html += '<button class="secondary small timeline-export-btn" data-id="' + item.id + '">导出</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+
+    container.querySelectorAll(".timeline-view-btn").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        showSnapshotDetail(modal, btn.dataset.id);
+      };
+    });
+
+    container.querySelectorAll(".timeline-rollback-btn").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        showRollbackConfirm(modal, btn.dataset.id);
+      };
+    });
+
+    container.querySelectorAll(".timeline-export-btn").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (callbacks.onExportSnapshot) {
+          callbacks.onExportSnapshot(btn.dataset.id);
+        }
+      };
+    });
+  }
+
+  function getTimelineIconClass(action, entityType) {
+    if (action === "add") return "add";
+    if (action === "delete") return "delete";
+    if (action === "modify") return "modify";
+    if (action === "merge") return "merge";
+    if (action === "import") return "import";
+    if (action === "rollback") return "rollback";
+    if (action === "migrate") return "migrate";
+    if (action === "initial") return "initial";
+    if (entityType === "scale" || entityType === "grid" || entityType === "projectConfig") return "modify";
+    return "modify";
+  }
+
+  function showSnapshotDetail(modal, snapshotId) {
+    const detailModal = modal.querySelector("#snapshotDetailModal");
+    if (!detailModal || !callbacks.onGetSnapshotDetail) return;
+
+    const detail = callbacks.onGetSnapshotDetail(snapshotId);
+    if (!detail) {
+      showToast("快照不存在", "error");
+      return;
+    }
+
+    let html = '<div class="snapshot-detail-content">';
+    html += '<div class="snapshot-detail-header">';
+    html += '<h3>快照详情</h3>';
+    html += '<button class="secondary small snapshot-detail-close">关闭</button>';
+    html += '</div>';
+
+    html += '<div class="snapshot-detail-body">';
+    html += '<div class="detail-row"><label>时间</label><span>' + new Date(detail.timestamp).toLocaleString() + '</span></div>';
+    html += '<div class="detail-row"><label>描述</label><span>' + escapeHtml(detail.description) + '</span></div>';
+    if (detail.entityType) {
+      html += '<div class="detail-row"><label>实体类型</label><span>' + (SnapshotModule?.ENTITY_TYPE_NAMES?.[detail.entityType] || detail.entityType) + '</span></div>';
+    }
+    if (detail.action) {
+      html += '<div class="detail-row"><label>操作类型</label><span>' + (SnapshotModule?.ACTION_NAMES?.[detail.action] || detail.action) + '</span></div>';
+    }
+    if (detail.entityCode) {
+      html += '<div class="detail-row"><label>实体编号</label><span>' + escapeHtml(detail.entityCode) + '</span></div>';
+    }
+    if (detail.tags && detail.tags.length > 0) {
+      html += '<div class="detail-row"><label>标签</label><span>' + detail.tags.map(t => `<span class="timeline-tag tag-${t}">${escapeHtml(t)}</span>`).join(" ") + '</span></div>';
+    }
+
+    if (detail.stats) {
+      html += '<div class="detail-section">';
+      html += '<h4>数据统计</h4>';
+      html += '<div class="detail-stats">';
+      html += '<div class="stat-item"><span class="stat-label">标记</span><span class="stat-value">' + detail.stats.markCount + '</span></div>';
+      html += '<div class="stat-item"><span class="stat-label">潜次</span><span class="stat-value">' + detail.stats.diveCount + '</span></div>';
+      html += '<div class="stat-item"><span class="stat-label">测距</span><span class="stat-value">' + detail.stats.measurementCount + '</span></div>';
+      if (detail.stats.hasScale) html += '<div class="stat-item"><span class="stat-label">比例尺</span><span class="stat-value">✓</span></div>';
+      if (detail.stats.hasGridConfig) html += '<div class="stat-item"><span class="stat-label">网格</span><span class="stat-value">✓</span></div>';
+      if (detail.stats.hasBaseMap) html += '<div class="stat-item"><span class="stat-label">底图</span><span class="stat-value">✓</span></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    if (detail.fieldDiff && detail.fieldDiff.length > 0) {
+      html += '<div class="detail-section">';
+      html += '<h4>字段变更</h4>';
+      html += '<div class="field-diff-list">';
+      detail.fieldDiff.forEach(diff => {
+        html += '<div class="field-diff-item">';
+        html += '<div class="field-diff-field">' + escapeHtml(diff.field) + '</div>';
+        html += '<div class="field-diff-values">';
+        html += '<div class="field-diff-before"><span class="diff-label">变更前：</span>' + escapeHtml(String(diff.before)) + '</div>';
+        html += '<div class="field-diff-after"><span class="diff-label">变更后：</span>' + escapeHtml(String(diff.after)) + '</div>';
+        html += '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      html += '</div>';
+    }
+
+    if (detail.metadata && detail.metadata.conflicts && detail.metadata.conflicts.length > 0) {
+      html += '<div class="detail-section">';
+      html += '<h4>回滚冲突记录</h4>';
+      html += '<div class="conflict-list">';
+      detail.metadata.conflicts.forEach(conflict => {
+        html += '<div class="conflict-item conflict-' + conflict.type + '">';
+        html += '<span class="conflict-icon">' + (conflict.type === "warning" ? "⚠️" : "🔄") + '</span>';
+        html += '<span>' + escapeHtml(conflict.description) + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+    html += '</div>';
+
+    detailModal.innerHTML = html;
+    detailModal.classList.remove("hidden");
+
+    detailModal.querySelector(".snapshot-detail-close").onclick = () => {
+      detailModal.classList.add("hidden");
+    };
+
+    detailModal.onclick = (e) => {
+      if (e.target === detailModal) {
+        detailModal.classList.add("hidden");
+      }
+    };
+  }
+
+  function showRollbackConfirm(modal, snapshotId) {
+    if (!callbacks.onCheckRollbackConflicts || !callbacks.onRollbackToSnapshot) return;
+
+    const conflictCheck = callbacks.onCheckRollbackConflicts(snapshotId);
+    if (!conflictCheck.valid) {
+      showToast(conflictCheck.error, "error");
+      return;
+    }
+
+    const snapshot = callbacks.onGetSnapshotDetail(snapshotId);
+    if (!snapshot) {
+      showToast("快照不存在", "error");
+      return;
+    }
+
+    let message = `确定要回滚到以下版本吗？\n\n「${snapshot.description}」\n时间：${new Date(snapshot.timestamp).toLocaleString()}\n\n`;
+
+    if (conflictCheck.conflicts && conflictCheck.conflicts.length > 0) {
+      const warnings = conflictCheck.conflicts.filter(c => c.type === "warning");
+      const changes = conflictCheck.conflicts.filter(c => c.type !== "warning");
+
+      if (changes.length > 0) {
+        message += `⚠️  数据变更：\n`;
+        if (conflictCheck.stats?.marksToAdd > 0) message += `  • 将恢复 ${conflictCheck.stats.marksToAdd} 个标记\n`;
+        if (conflictCheck.stats?.marksToDelete > 0) message += `  • 将删除 ${conflictCheck.stats.marksToDelete} 个标记\n`;
+        if (conflictCheck.stats?.divesToDelete > 0) message += `  • 将删除 ${conflictCheck.stats.divesToDelete} 个潜次\n`;
+      }
+      if (warnings.length > 0) {
+        message += `\nℹ️  提示：\n`;
+        warnings.forEach(w => {
+          message += `  • ${w.description}\n`;
+        });
+      }
+      message += `\n`;
+    }
+
+    message += `回滚后将自动创建当前状态的备份快照，可用于撤销操作。`;
+
+    const confirmed = confirm(message);
+    if (!confirmed) return;
+
+    const force = conflictCheck.conflicts && conflictCheck.conflicts.some(c => c.type !== "warning");
+
+    showToast("正在回滚...", "info");
+
+    const result = callbacks.onRollbackToSnapshot(snapshotId, { force, createUndoSnapshot: true });
+
+    if (result.success) {
+      let successMsg = "已成功回滚到历史版本";
+      if (result.undoSnapshotId) {
+        successMsg += "，已自动创建回滚前的备份";
+      }
+      showToast(successMsg, "success");
+
+      if (result.conflicts && result.conflicts.some(c => c.type === "warning" && c.action === "merge_import")) {
+        setTimeout(() => {
+          showToast("提示：回滚包含合并/导入数据，原始合并记录已保留", "info");
+        }, 1500);
+      }
+
+      renderTimeline(modal);
+    } else {
+      showToast(result.error || "回滚失败", "error");
+    }
   }
 
   return {

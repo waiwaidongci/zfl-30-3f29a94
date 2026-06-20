@@ -147,6 +147,9 @@ const App = (() => {
     if (typeof MergeModule !== "undefined" && typeof MergeModule.setProjectId === "function") {
       MergeModule.setProjectId(currentProject.id);
     }
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.setProjectId === "function") {
+      SnapshotModule.setProjectId(currentProject.id);
+    }
     marks = DataIO.loadMarks();
     dives = DataIO.loadDives();
     measurements = DataIO.loadMeasurements();
@@ -172,11 +175,18 @@ const App = (() => {
     } else if (!dives.length && marks.length) {
       autoCreateDivesFromMarks();
     }
+
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.ensureInitialSnapshot === "function") {
+      SnapshotModule.ensureInitialSnapshot();
+    }
   }
 
   function recordChange(entityType, action, entityId, entityCode, beforeData, afterData) {
     if (typeof MergeModule !== "undefined" && typeof MergeModule.recordChange === "function") {
       MergeModule.recordChange(entityType, action, entityId, entityCode, beforeData, afterData);
+    }
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.recordChange === "function") {
+      SnapshotModule.recordChange(entityType, action, entityId, entityCode, beforeData, afterData);
     }
   }
 
@@ -219,6 +229,15 @@ const App = (() => {
       onSaveRevisitTask: handleSaveRevisitTask,
       onDeleteRevisitTask: handleDeleteRevisitTask,
       onCreateDiveFromRevisitPlan: handleCreateDiveFromRevisitPlan,
+      onGetTimeline: handleGetTimeline,
+      onGetSnapshotDetail: handleGetSnapshotDetail,
+      onCheckRollbackConflicts: handleCheckRollbackConflicts,
+      onRollbackToSnapshot: handleRollbackToSnapshot,
+      onCreateManualSnapshot: handleCreateManualSnapshot,
+      onGetSnapshotDiff: handleGetSnapshotDiff,
+      onGetSnapshotStorageStats: handleGetSnapshotStorageStats,
+      onExportSnapshot: handleExportSnapshot,
+      onImportSnapshot: handleImportSnapshot,
     };
 
     UI.init({
@@ -1063,6 +1082,25 @@ const App = (() => {
         return;
       }
 
+      const isSnapshotExport = DataIO.isSnapshotExportFormat(parsed.data);
+      if (isSnapshotExport && typeof SnapshotModule !== "undefined") {
+        if (currentProject && currentProject.archived) {
+          UI.showToast("归档项目无法导入快照，请先恢复项目", "error");
+          return;
+        }
+        if (!confirm(`检测到快照导出文件：\n「${parsed.data.snapshotDescription || "未命名快照"}」\n\n导入后将添加到当前项目的版本历史中，您可以随后选择回滚到此快照。\n\n是否继续导入？`)) {
+          UI.showToast("已取消导入", "info");
+          return;
+        }
+        const result = SnapshotModule.importSnapshotData(parsed.data, { autoRollback: false });
+        if (result.success) {
+          UI.showToast("快照已导入到版本历史，可在项目管理中查看并回滚", "success");
+        } else {
+          UI.showToast(result.error || "快照导入失败", "error");
+        }
+        return;
+      }
+
       const isOfflineMerge = DataIO.isOfflineMergeFormat(parsed.data);
       if (isOfflineMerge && typeof MergeModule !== "undefined") {
         const localData = {
@@ -1621,6 +1659,10 @@ const App = (() => {
     newImportErrors.sort((a, b) => (a.lineNumber || 0) - (b.lineNumber || 0));
 
     setImportErrors(newImportErrors);
+
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
+      SnapshotModule.handleImportSnapshot({ source: "csv", rows: parsed.rows.length }, "csv");
+    }
   }
 
   function applyImport(comparison, resolutions) {
@@ -1791,6 +1833,10 @@ const App = (() => {
     }
 
     setImportErrors(newImportErrors);
+
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
+      SnapshotModule.handleImportSnapshot(comparison, comparison.version || "7.0");
+    }
   }
 
   function applyOfflineMerge(analysis, resolutions) {
@@ -1927,6 +1973,14 @@ const App = (() => {
       }, 2500);
     }
 
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleMergeSnapshot === "function") {
+      SnapshotModule.handleMergeSnapshot({
+        deviceId: analysis.deviceId,
+        deviceName: analysis.deviceName,
+        exportDate: analysis.exportDate,
+      });
+    }
+
     const snapshot = MergeModule.loadSnapshot();
     if (snapshot) {
       UI.showRollbackNotice(snapshot.timestamp, () => {
@@ -1987,6 +2041,176 @@ const App = (() => {
           rollbackFromMerge();
         });
       }
+    }
+  }
+
+  function handleGetTimeline(options) {
+    if (typeof SnapshotModule === "undefined") return { total: 0, items: [] };
+    return SnapshotModule.getTimeline(options);
+  }
+
+  function handleGetSnapshotDetail(snapshotId) {
+    if (typeof SnapshotModule === "undefined") return null;
+    const snapshot = SnapshotModule.getSnapshotById(snapshotId);
+    if (!snapshot) return null;
+    return {
+      id: snapshot.id,
+      timestamp: snapshot.timestamp,
+      description: snapshot.description,
+      entityType: snapshot.entityType,
+      action: snapshot.action,
+      entityCode: snapshot.entityCode,
+      tags: snapshot.tags,
+      metadata: snapshot.metadata,
+      fieldDiff: snapshot.metadata?.fieldDiff,
+      stats: snapshot.data ? {
+        markCount: snapshot.data.marks?.length || 0,
+        diveCount: snapshot.data.dives?.length || 0,
+        measurementCount: snapshot.data.measurements?.length || 0,
+        hasScale: !!snapshot.data.scale,
+        hasGridConfig: !!snapshot.data.gridConfig,
+        hasBaseMap: !!snapshot.data.baseMap,
+        viewCount: snapshot.data.views?.length || 0,
+        revisitPlanCount: snapshot.data.revisitPlan?.length || 0,
+      } : null,
+    };
+  }
+
+  function handleCheckRollbackConflicts(snapshotId) {
+    if (typeof SnapshotModule === "undefined") return { valid: false, error: "快照模块未加载" };
+    const snapshot = SnapshotModule.getSnapshotById(snapshotId);
+    if (!snapshot) return { valid: false, error: "快照不存在" };
+    return SnapshotModule.checkRollbackConflicts(snapshot);
+  }
+
+  function handleRollbackToSnapshot(snapshotId, options) {
+    if (typeof SnapshotModule === "undefined") return { success: false, error: "快照模块未加载" };
+
+    const currentProject = ProjectManager.getCurrentProject();
+    if (currentProject && currentProject.archived) {
+      return { success: false, error: "归档项目无法回滚，请先恢复项目" };
+    }
+
+    const result = SnapshotModule.rollbackToSnapshot(snapshotId, options);
+
+    if (result.success) {
+      marks = result.data.marks || [];
+      dives = result.data.dives || [];
+      measurements = result.data.measurements || [];
+      scale = result.data.scale || null;
+      gridConfig = result.data.gridConfig || { enabled: false, size: 1, showLabels: true };
+      baseMap = result.data.baseMap || null;
+      views = result.data.views || [];
+      revisitPlan = result.data.revisitPlan || [];
+
+      UI.resetAllState();
+      UI.init({
+        marks,
+        dives,
+        measurements,
+        scale,
+        gridConfig,
+        baseMap,
+        pending: null,
+        currentEditId: null,
+        importErrors,
+        callbacks,
+        currentProject,
+        views,
+        revisitPlan,
+      });
+      UI.render();
+    }
+
+    return result;
+  }
+
+  function handleCreateManualSnapshot(description) {
+    if (typeof SnapshotModule === "undefined") return null;
+
+    const currentProject = ProjectManager.getCurrentProject();
+    if (currentProject && currentProject.archived) {
+      UI.showToast("归档项目无法创建快照", "error");
+      return null;
+    }
+
+    const snapshot = SnapshotModule.recordManualSnapshot(description);
+    if (snapshot) {
+      UI.showToast("快照已创建", "success");
+    }
+    return snapshot;
+  }
+
+  function handleGetSnapshotDiff(snapshotId1, snapshotId2) {
+    if (typeof SnapshotModule === "undefined") return null;
+    return SnapshotModule.getSnapshotDiff(snapshotId1, snapshotId2);
+  }
+
+  function handleGetSnapshotStorageStats() {
+    if (typeof SnapshotModule === "undefined") return null;
+    return SnapshotModule.getStorageStats();
+  }
+
+  function handleExportSnapshot(snapshotId) {
+    if (typeof SnapshotModule === "undefined") {
+      UI.showToast("快照模块未加载", "error");
+      return;
+    }
+    const data = SnapshotModule.exportSnapshotData(snapshotId);
+    if (!data) {
+      UI.showToast("快照不存在", "error");
+      return;
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `snapshot-${data.snapshotId.slice(0, 8)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    UI.showToast("快照已导出", "success");
+  }
+
+  async function handleImportSnapshot() {
+    if (typeof SnapshotModule === "undefined") {
+      UI.showToast("快照模块未加载", "error");
+      return;
+    }
+
+    const currentProject = ProjectManager.getCurrentProject();
+    if (currentProject && currentProject.archived) {
+      UI.showToast("归档项目无法导入快照", "error");
+      return;
+    }
+
+    try {
+      const file = await DataIO.triggerFileInput();
+      const text = await DataIO.readFileAsText(file);
+      const parsed = JSON.parse(text);
+
+      const result = SnapshotModule.importSnapshotData(parsed, { autoRollback: false });
+      if (!result.success) {
+        UI.showToast(result.error, "error");
+        return;
+      }
+
+      UI.showToast("快照已导入，可在版本历史中查看并回滚", "success");
+      return result;
+    } catch (e) {
+      if (e.message !== "File selection cancelled" && e.message !== "No file selected") {
+        UI.showToast("导入失败: " + e.message, "error");
+      }
+    }
+  }
+
+  function handleApplyOfflineMergeSnapshot(importData) {
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleMergeSnapshot === "function") {
+      SnapshotModule.handleMergeSnapshot(importData);
+    }
+  }
+
+  function handleApplyImportSnapshot(importData, version) {
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
+      SnapshotModule.handleImportSnapshot(importData, version);
     }
   }
 

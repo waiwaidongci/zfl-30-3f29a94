@@ -345,6 +345,16 @@ const DataIO = (() => {
     return !!(data && typeof data === "object" && data.format === "offline-merge" && data.snapshot && data.changeLog);
   }
 
+  function isSnapshotExportFormat(data) {
+    return !!(
+      data &&
+      typeof data === "object" &&
+      data.exportType === "snapshot" &&
+      data.originalData &&
+      typeof SnapshotModule !== "undefined"
+    );
+  }
+
   function readFileAsDataURL(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -917,6 +927,7 @@ const DataIO = (() => {
     isFullDataFormatV6,
     isFullDataFormatV7,
     isOfflineMergeFormat,
+    isSnapshotExportFormat,
     getDefaultReview,
     ensureReviewData,
     ensureParticipantsData,

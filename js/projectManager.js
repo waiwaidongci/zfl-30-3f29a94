@@ -232,7 +232,7 @@ const ProjectManager = (() => {
     const idx = projects.findIndex((p) => p.id === projectId);
     if (idx === -1) return false;
 
-    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap", "views"].forEach((suffix) => {
+    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap", "views", "revisitPlan", "changeLog", "mergeSnapshot", "snapshots", "currentSnapshotId"].forEach((suffix) => {
       localStorage.removeItem(projKey(projectId, suffix));
     });
 
@@ -272,13 +272,41 @@ const ProjectManager = (() => {
 
   function getProjectStorageUsage(projectId) {
     let totalSize = 0;
-    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap", "views"].forEach((suffix) => {
+    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap", "views", "revisitPlan", "changeLog", "mergeSnapshot", "snapshots", "currentSnapshotId"].forEach((suffix) => {
       const value = localStorage.getItem(projKey(projectId, suffix));
       if (value) {
         totalSize += new Blob([value]).size;
       }
     });
     return totalSize;
+  }
+
+  function getProjectFullStats(projectId) {
+    const stats = {
+      totalSize: 0,
+      items: {},
+    };
+    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap", "views", "revisitPlan", "changeLog", "mergeSnapshot", "snapshots", "currentSnapshotId"].forEach((suffix) => {
+      const value = localStorage.getItem(projKey(projectId, suffix));
+      if (value) {
+        const size = new Blob([value]).size;
+        stats.items[suffix] = {
+          size,
+          sizeKB: (size / 1024).toFixed(1),
+          exists: true,
+        };
+        stats.totalSize += size;
+      } else {
+        stats.items[suffix] = {
+          size: 0,
+          sizeKB: "0.0",
+          exists: false,
+        };
+      }
+    });
+    stats.totalSizeKB = (stats.totalSize / 1024).toFixed(1);
+    stats.totalSizeMB = (stats.totalSize / (1024 * 1024)).toFixed(2);
+    return stats;
   }
 
   return {
@@ -295,6 +323,7 @@ const ProjectManager = (() => {
     loadProjectData,
     saveProjectData,
     getProjectStorageUsage,
+    getProjectFullStats,
     projKey,
   };
 })();
