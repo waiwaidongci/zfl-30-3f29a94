@@ -482,39 +482,41 @@ const App = (() => {
   }
 
   function handleSaveDive(data) {
-    const participants = data.participants || [];
-    delete data.participants;
-    const oldCode = data.id ? dives.find(d => d.id === data.id)?.code : null;
+    const formData = { ...data };
+    const participants = formData.participants || [];
+    delete formData.participants;
+    const isEdit = !!formData.id;
+    const oldDive = isEdit ? dives.find(d => d.id === formData.id) : null;
+    const oldCode = oldDive ? oldDive.code : null;
 
-    if (data.id) {
-      const dive = dives.find((d) => d.id === data.id);
-      if (dive) {
-        const beforeData = JSON.parse(JSON.stringify(dive));
-        Object.assign(dive, data);
-        dive.participants = participants;
-        if (oldCode && oldCode !== data.code) {
-          marks.forEach(m => {
-            if (m.dive === oldCode) {
-              const beforeMark = JSON.parse(JSON.stringify(m));
-              m.dive = data.code;
-              recordChange("mark", "modify", m.id, m.code, beforeMark, m);
-            }
-          });
-          measurements.forEach(m => {
-            if (m.dive === oldCode) {
-              const beforeMeas = JSON.parse(JSON.stringify(m));
-              m.dive = data.code;
-              recordChange("measurement", "modify", m.id, m.code, beforeMeas, m);
-            }
-          });
-          save();
-          saveMeasurements();
-        }
-        recordChange("dive", "modify", dive.id, dive.code, beforeData, dive);
+    if (isEdit && oldDive) {
+      const beforeData = JSON.parse(JSON.stringify(oldDive));
+      Object.assign(oldDive, formData);
+      oldDive.participants = participants;
+
+      if (oldCode && oldCode !== formData.code) {
+        marks.forEach(m => {
+          if (m.dive === oldCode) {
+            const beforeMark = JSON.parse(JSON.stringify(m));
+            m.dive = formData.code;
+            recordChange("mark", "modify", m.id, m.code, beforeMark, m);
+          }
+        });
+        measurements.forEach(m => {
+          if (m.dive === oldCode) {
+            const beforeMeas = JSON.parse(JSON.stringify(m));
+            m.dive = formData.code;
+            recordChange("measurement", "modify", m.id, m.code, beforeMeas, m);
+          }
+        });
+        save();
+        saveMeasurements();
       }
+
+      recordChange("dive", "modify", oldDive.id, oldDive.code, beforeData, oldDive);
     } else {
       const newDive = {
-        ...data,
+        ...formData,
         id: crypto.randomUUID(),
         participants: participants,
       };
@@ -531,6 +533,7 @@ const App = (() => {
     const dive = dives.find(d => d.id === id);
     if (!dive) return;
 
+    const diveSnapshot = JSON.parse(JSON.stringify(dive));
     const associatedMarks = marks.filter(m => m.dive === dive.code);
     const associatedMeasurements = measurements.filter(m => m.dive === dive.code);
 
@@ -556,7 +559,7 @@ const App = (() => {
       saveMeasurements();
     }
 
-    recordChange("dive", "delete", dive.id, dive.code, dive, null);
+    recordChange("dive", "delete", diveSnapshot.id, diveSnapshot.code, diveSnapshot, null);
     dives = dives.filter((d) => d.id !== id);
     UI.resetDiveForm();
     saveDives();

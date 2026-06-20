@@ -613,6 +613,17 @@ const MergeModule = (() => {
       }
     });
 
+    const localParticipants = localDive.participants || [];
+    const importParticipants = importDive.participants || [];
+    if (JSON.stringify(localParticipants) !== JSON.stringify(importParticipants)) {
+      diff.fields.push("participants");
+      diff.changed.push({
+        field: "participants",
+        local: localParticipants,
+        imported: importParticipants,
+      });
+    }
+
     return diff;
   }
 
