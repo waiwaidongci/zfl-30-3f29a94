@@ -378,4 +378,264 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   text-decoration: line-through;
 }
 
+.attachments-section {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f5fafb;
+  border: 1px solid #d7e4e5;
+  border-radius: 8px;
+}
+
+.attachments-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.attachments-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.attachments-header button {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.attachments-list {
+  display: grid;
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.attachment-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #d7e4e5;
+  border-radius: 8px;
+}
+
+.attachment-thumbnail {
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #e8f2f3;
+  display: grid;
+  place-items: center;
+}
+
+.attachment-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.attachment-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #183035;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.attachment-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.attachment-meta .small {
+  font-size: 11px;
+}
+
+.attachment-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.attachment-fields select,
+.attachment-fields input {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.attachment-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.attachment-actions button {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+button.small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.attachments-empty {
+  text-align: center;
+  padding: 24px 12px;
+  background: #fff;
+  border: 2px dashed #c9dadc;
+  border-radius: 8px;
+}
+
+.empty-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.attachments-empty .small {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.small {
+  font-size: 12px;
+}
+
+.storage-info {
+  margin-bottom: 12px;
+}
+
+.storage-bar {
+  height: 6px;
+  background: #e1ecee;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.storage-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.storage-bar-fill.storage-ok {
+  background: #28a745;
+}
+
+.storage-bar-fill.storage-warning {
+  background: #ffc107;
+}
+
+.storage-bar-fill.storage-danger {
+  background: #dc3545;
+}
+
+.storage-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.storage-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.storage-badge.storage-ok {
+  background: #d4edda;
+  color: #155724;
+}
+
+.storage-badge.storage-warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.storage-badge.storage-danger {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.attachment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  background: #e8f2f3;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d6c78;
+}
+
+.attachment-badge.small-badge {
+  padding: 1px 5px;
+  font-size: 10px;
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.item-header b {
+  font-size: 14px;
+}
+
+.modal-image-preview {
+  max-width: 90vw;
+  max-height: 90vh;
+  padding: 16px;
+}
+
+.image-preview-container {
+  display: grid;
+  place-items: center;
+  max-height: 60vh;
+  margin-bottom: 12px;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.image-preview-container img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+}
+
+.image-preview-info h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.image-preview-desc {
+  margin-top: 8px;
+  padding: 10px;
+  background: #f5fafb;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 @media (max-width: 980px) { header { display: block; } .app { grid-template-columns: 1fr; } .map { height: 420px; } .stats-grid { grid-template-columns: 1fr 1fr; } .detail-grid { grid-template-columns: 1fr; } .related-marks { grid-template-columns: 1fr; } }

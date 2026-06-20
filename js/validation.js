@@ -5,6 +5,8 @@ const Validation = (() => {
   const VALID_WEATHER = ["sunny", "cloudy", "rainy", "windy", "foggy"];
   const VALID_CURRENT = ["calm", "weak", "moderate", "strong"];
   const MEASUREMENT_REQUIRED_FIELDS = ["code", "dive", "length", "points"];
+  const ATTACHMENT_REQUIRED_FIELDS = ["id", "name", "thumbnail"];
+  const VALID_ANGLES = ["top", "side", "front", "back", "detail", "overview", "other"];
 
   function validateMark(mark, index) {
     const errors = [];
@@ -29,6 +31,19 @@ const Validation = (() => {
 
     if (mark.y !== undefined && (typeof mark.y !== "number" || mark.y < 0 || mark.y > 100)) {
       errors.push(`y 坐标必须是 0-100 之间的数字`);
+    }
+
+    if (mark.attachments !== undefined) {
+      if (!Array.isArray(mark.attachments)) {
+        errors.push("attachments 必须是数组");
+      } else {
+        mark.attachments.forEach((att, attIndex) => {
+          const attResult = validateAttachment(att, attIndex);
+          if (!attResult.valid) {
+            errors.push(`附件 ${attIndex + 1}: ${attResult.errors.join("; ")}`);
+          }
+        });
+      }
     }
 
     return { valid: errors.length === 0, errors, mark };
@@ -541,6 +556,57 @@ const Validation = (() => {
     return result;
   }
 
+  function validateAttachment(attachment, index) {
+    const errors = [];
+
+    if (typeof attachment !== "object" || attachment === null || Array.isArray(attachment)) {
+      return { valid: false, errors: [`第 ${index + 1} 个附件不是有效的对象`], attachment };
+    }
+
+    for (const field of ATTACHMENT_REQUIRED_FIELDS) {
+      if (!attachment[field] || typeof attachment[field] !== "string" || !attachment[field].trim()) {
+        errors.push(`缺少必填字段: ${field}`);
+      }
+    }
+
+    if (attachment.angle && typeof attachment.angle !== "string") {
+      errors.push("angle 必须是字符串");
+    }
+
+    if (attachment.description !== undefined && typeof attachment.description !== "string") {
+      errors.push("description 必须是字符串");
+    }
+
+    if (attachment.size !== undefined && typeof attachment.size !== "number") {
+      errors.push("size 必须是数字");
+    }
+
+    if (attachment.thumbnail && typeof attachment.thumbnail === "string") {
+      if (!attachment.thumbnail.startsWith("data:image/")) {
+        errors.push("thumbnail 必须是有效的图片 data URL");
+      }
+    }
+
+    if (attachment.fullImage && typeof attachment.fullImage === "string") {
+      if (!attachment.fullImage.startsWith("data:image/")) {
+        errors.push("fullImage 必须是有效的图片 data URL");
+      }
+    }
+
+    return { valid: errors.length === 0, errors, attachment };
+  }
+
+  function validateAttachmentArray(attachments) {
+    if (!Array.isArray(attachments)) {
+      return { valid: false, error: "附件数据必须是数组" };
+    }
+
+    const results = attachments.map((att, index) => validateAttachment(att, index));
+    const valid = results.every(r => r.valid);
+
+    return { valid, results, total: attachments.length };
+  }
+
   return {
     validateMark,
     validateMarkArray,
@@ -550,6 +616,8 @@ const Validation = (() => {
     validateMeasurementArray,
     validateScale,
     validateGridConfig,
+    validateAttachment,
+    validateAttachmentArray,
     compareMarks,
     compareDives,
     compareMeasurements,
@@ -563,8 +631,10 @@ const Validation = (() => {
     VALID_TYPES,
     VALID_WEATHER,
     VALID_CURRENT,
+    VALID_ANGLES,
     MARK_REQUIRED_FIELDS,
     DIVE_REQUIRED_FIELDS,
     MEASUREMENT_REQUIRED_FIELDS,
+    ATTACHMENT_REQUIRED_FIELDS,
   };
 })();

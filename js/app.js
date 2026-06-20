@@ -138,7 +138,12 @@ const App = (() => {
   }
 
   function save() {
-    DataIO.saveMarks(marks);
+    try {
+      DataIO.saveMarks(marks);
+    } catch (e) {
+      UI.showToast("保存失败：存储空间不足，请清理附件后重试", "error");
+      throw e;
+    }
   }
 
   function saveDives() {
@@ -158,20 +163,26 @@ const App = (() => {
   }
 
   function handleSaveMark(data, pendingPos) {
+    const attachments = data.attachments || [];
+    delete data.attachments;
+
     if (data.id) {
       const mark = marks.find((m) => m.id === data.id);
       if (mark) {
         Object.assign(mark, data, pendingPos);
+        mark.attachments = attachments;
       }
     } else {
       marks.push({
         ...data,
         id: crypto.randomUUID(),
         ...pendingPos,
+        attachments: attachments,
       });
     }
     save();
     UI.updateState(marks, dives, measurements, scale, gridConfig, pending, data.id || null);
+    UI.showToast("标记已保存", "success");
   }
 
   function handleDeleteMark(id) {
@@ -314,9 +325,10 @@ const App = (() => {
 
       const isFullFormat = DataIO.isFullDataFormat(parsed.data);
       const isFullFormatV3 = DataIO.isFullDataFormatV3(parsed.data);
+      const isFullFormatV4 = DataIO.isFullDataFormatV4(parsed.data);
       let comparison;
 
-      if (isFullFormatV3) {
+      if (isFullFormatV4) {
         const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
         const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
         const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
@@ -337,14 +349,15 @@ const App = (() => {
         comparison = {
           isFullFormat: true,
           isFullFormatV3: true,
-          version: parsed.data.version || "3.0",
+          isFullFormatV4: true,
+          version: parsed.data.version || "4.0",
           marks: markComparison,
           dives: diveComparison,
           measurements: measurementComparison,
           scale: parsed.data.scale,
           gridConfig: parsed.data.gridConfig,
         };
-      } else if (isFullFormat) {
+      } else if (isFullFormatV3) {
         const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
         const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
 

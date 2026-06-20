@@ -2,6 +2,7 @@ const UI = (() => {
   const typeNames = { ceramic: "陶片", wood: "木构件", metal: "金属件", unknown: "未知物" };
   const weatherNames = { sunny: "晴", cloudy: "多云", rainy: "雨", windy: "大风", foggy: "雾" };
   const currentNames = { calm: "无流", weak: "弱流", moderate: "中流", strong: "强流" };
+  const angleNames = { top: "俯视", side: "侧视", front: "正视", back: "后视", detail: "细节", overview: "全景", other: "其他" };
 
   let elements = {};
   let marks = [];
@@ -13,6 +14,7 @@ const UI = (() => {
   let currentEditId = null;
   let currentEditDiveId = null;
   let currentEditMeasureId = null;
+  let currentAttachments = [];
   let activeTab = "marks";
 
   let callbacks = {};
@@ -59,6 +61,10 @@ const UI = (() => {
       cancelMeasureBtn: document.querySelector("#cancelMeasureBtn"),
       gridSize: document.querySelector("#gridSize"),
       showGridLabels: document.querySelector("#showGridLabels"),
+      addAttachmentBtn: document.querySelector("#addAttachmentBtn"),
+      attachmentsList: document.querySelector("#attachmentsList"),
+      attachmentsEmpty: document.querySelector("#attachmentsEmpty"),
+      storageInfo: document.querySelector("#storageInfo"),
     };
 
     marks = deps.marks;
@@ -84,6 +90,8 @@ const UI = (() => {
     updateScaleDisplay();
     updateMeasureDiveSelect();
     renderGrid();
+    renderAttachments();
+    renderStorageInfo();
   }
 
   function initRibs() {
@@ -113,10 +121,13 @@ const UI = (() => {
       elements.form.reset();
       elements.form.id.value = "";
       currentEditId = null;
+      currentAttachments = [];
       elements.form.code.value = "M-" + String(marks.length + 1).padStart(3, "0");
       if (dives.length > 0) {
         elements.form.dive.value = dives[0].code;
       }
+      renderAttachments();
+      renderStorageInfo();
       render();
     });
 
@@ -124,6 +135,7 @@ const UI = (() => {
       event.preventDefault();
       if (!pending) pending = { x: 50, y: 50 };
       const data = Object.fromEntries(new FormData(elements.form).entries());
+      data.attachments = getCurrentAttachments();
       callbacks.onSaveMark(data, pending);
     };
 
@@ -207,6 +219,8 @@ const UI = (() => {
     elements.importBtn.onclick = () => {
       callbacks.onImport();
     };
+
+    elements.addAttachmentBtn.onclick = handleAddAttachment;
 
     elements.filter.onchange = render;
     elements.diveFilter.onchange = render;
@@ -661,6 +675,8 @@ const UI = (() => {
       renderMeasureTab();
     } else {
       render();
+      renderAttachments();
+      renderStorageInfo();
     }
   }
 
@@ -707,6 +723,8 @@ const UI = (() => {
       renderMeasureTab();
     } else {
       render();
+      renderAttachments();
+      renderStorageInfo();
     }
   }
 
@@ -767,24 +785,29 @@ const UI = (() => {
     elements.list.className = "list";
     elements.list.innerHTML = data
       .map(
-        (m) =>
-          '<div class="item ' +
-          (m.id === currentEditId ? "active" : "") +
-          '" data-id="' +
-          m.id +
-          '"><b>' +
-          m.code +
-          '</b> <span class="pill">' +
-          typeNames[m.type] +
-          '</span><div class="muted">' +
-          m.dive +
-          " · " +
-          m.depth +
-          " · " +
-          (m.orientation || "") +
-          "</div><div>" +
-          (m.condition || "") +
-          "</div></div>"
+        (m) => {
+          const attCount = m.attachments ? m.attachments.length : 0;
+          const attBadge = attCount > 0 
+            ? '<span class="attachment-badge" title="' + attCount + '个附件">📷 ' + attCount + '</span>' 
+            : '';
+          return '<div class="item ' +
+            (m.id === currentEditId ? "active" : "") +
+            '" data-id="' +
+            m.id +
+            '"><div class="item-header"><b>' +
+            m.code +
+            '</b> <span class="pill">' +
+            typeNames[m.type] +
+            '</span>' + attBadge + '</div><div class="muted">' +
+            m.dive +
+            " · " +
+            m.depth +
+            " · " +
+            (m.orientation || "") +
+            "</div><div>" +
+            (m.condition || "") +
+            "</div></div>";
+        }
       )
       .join("");
     elements.list.querySelectorAll("[data-id]").forEach((el) => {
@@ -801,16 +824,27 @@ const UI = (() => {
     }, {});
     elements.list.innerHTML = Object.entries(groups)
       .map(
-        ([dive, items]) =>
-          '<div class="item"><b>' +
-          dive +
-          '</b><div class="muted">新增' +
-          items.length +
-          "个标记</div>" +
-          items
-            .map((i) => "<div>" + i.code + " · " + typeNames[i.type] + "</div>")
-            .join("") +
-          "</div>"
+        ([dive, items]) => {
+          const totalAttachments = items.reduce((sum, i) => sum + (i.attachments ? i.attachments.length : 0), 0);
+          const attBadge = totalAttachments > 0
+            ? '<span class="attachment-badge" title="' + totalAttachments + '个附件">📷 ' + totalAttachments + '</span>'
+            : '';
+          return '<div class="item"><b>' +
+            dive +
+            '</b> ' + attBadge + '<div class="muted">新增' +
+            items.length +
+            "个标记</div>" +
+            items
+              .map((i) => {
+                const attCount = i.attachments ? i.attachments.length : 0;
+                const itemAttBadge = attCount > 0
+                  ? ' <span class="attachment-badge small-badge">📷 ' + attCount + '</span>'
+                  : '';
+                return "<div>" + i.code + " · " + typeNames[i.type] + itemAttBadge + "</div>";
+              })
+              .join("") +
+            "</div>";
+        }
       )
       .join("");
   }
@@ -1040,6 +1074,9 @@ const UI = (() => {
     }
     pending = { x: mark.x, y: mark.y };
     currentEditId = id;
+    currentAttachments = mark.attachments ? JSON.parse(JSON.stringify(mark.attachments)) : [];
+    renderAttachments();
+    renderStorageInfo();
     render();
   }
 
@@ -1058,6 +1095,9 @@ const UI = (() => {
     elements.form.id.value = "";
     currentEditId = null;
     pending = null;
+    currentAttachments = [];
+    renderAttachments();
+    renderStorageInfo();
   }
 
   function resetDiveForm() {
@@ -1399,12 +1439,219 @@ const UI = (() => {
       "position:fixed;top:24px;right:24px;padding:12px 20px;background:#1d6c78;color:#fff;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3);z-index:2000;animation:slideIn .3s ease;";
     if (type === "error") toast.style.background = "#c0392b";
     if (type === "success") toast.style.background = "#28a745";
+    if (type === "warning") toast.style.background = "#ffc107";
+    if (type === "warning") toast.style.color = "#856404";
     toast.textContent = message;
     document.body.appendChild(toast);
     setTimeout(() => {
       toast.style.animation = "slideOut .3s ease forwards";
       setTimeout(() => document.body.removeChild(toast), 300);
     }, 2500);
+  }
+
+  async function handleAddAttachment() {
+    try {
+      const file = await DataIO.triggerImageInput();
+      const capacity = DataIO.checkStorageCapacity(file.size * 3);
+
+      if (capacity.willExceed) {
+        showToast("存储空间不足，无法添加此图片", "error");
+        return;
+      }
+
+      if (capacity.willWarn) {
+        showToast("存储空间接近上限，建议清理或导出备份", "warning");
+      }
+
+      const attachment = await DataIO.processImageFile(file);
+      currentAttachments.push(attachment);
+      renderAttachments();
+      renderStorageInfo();
+      showToast("图片添加成功", "success");
+    } catch (e) {
+      if (e.message !== "No file selected" && e.message !== "File selection cancelled") {
+        showToast("添加图片失败: " + e.message, "error");
+      }
+    }
+  }
+
+  function renderAttachments() {
+    if (currentAttachments.length === 0) {
+      elements.attachmentsList.innerHTML = "";
+      elements.attachmentsEmpty.classList.remove("hidden");
+      return;
+    }
+
+    elements.attachmentsEmpty.classList.add("hidden");
+
+    elements.attachmentsList.innerHTML = currentAttachments.map((att, index) => {
+      const sizeKB = (att.size / 1024).toFixed(1);
+      const angleLabel = angleNames[att.angle] || att.angle || "未设置";
+
+      return `
+        <div class="attachment-card" data-id="${att.id}">
+          <div class="attachment-thumbnail" data-action="preview">
+            <img src="${att.thumbnail}" alt="${att.name}">
+          </div>
+          <div class="attachment-info">
+            <div class="attachment-name" title="${att.name}">${att.name}</div>
+            <div class="attachment-meta">
+              <span class="muted small">${sizeKB} KB</span>
+              <span class="muted small">${att.width}×${att.height}</span>
+            </div>
+            <div class="attachment-fields">
+              <select class="attachment-angle" data-id="${att.id}">
+                <option value="">拍摄角度</option>
+                <option value="top" ${att.angle === "top" ? "selected" : ""}>俯视</option>
+                <option value="side" ${att.angle === "side" ? "selected" : ""}>侧视</option>
+                <option value="front" ${att.angle === "front" ? "selected" : ""}>正视</option>
+                <option value="back" ${att.angle === "back" ? "selected" : ""}>后视</option>
+                <option value="detail" ${att.angle === "detail" ? "selected" : ""}>细节</option>
+                <option value="overview" ${att.angle === "overview" ? "selected" : ""}>全景</option>
+                <option value="other" ${att.angle === "other" ? "selected" : ""}>其他</option>
+              </select>
+              <input type="text" class="attachment-desc" data-id="${att.id}" 
+                     placeholder="图片说明..." value="${att.description || ''}">
+            </div>
+            <div class="attachment-actions">
+              <button type="button" class="secondary small" data-action="preview" data-id="${att.id}">查看大图</button>
+              <button type="button" class="secondary danger small" data-action="remove" data-id="${att.id}">移除</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    elements.attachmentsList.querySelectorAll("[data-action='remove']").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        removeAttachment(id);
+      };
+    });
+
+    elements.attachmentsList.querySelectorAll("[data-action='preview']").forEach(el => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const id = el.dataset.id || el.closest(".attachment-card").dataset.id;
+        showImagePreview(id);
+      };
+    });
+
+    elements.attachmentsList.querySelectorAll(".attachment-angle").forEach(select => {
+      select.onchange = (e) => {
+        const id = e.target.dataset.id;
+        updateAttachmentAngle(id, e.target.value);
+      };
+    });
+
+    elements.attachmentsList.querySelectorAll(".attachment-desc").forEach(input => {
+      input.onchange = (e) => {
+        const id = e.target.dataset.id;
+        updateAttachmentDescription(id, e.target.value);
+      };
+    });
+  }
+
+  function removeAttachment(id) {
+    if (!confirm("确定要移除这张图片吗？")) return;
+    currentAttachments = currentAttachments.filter(a => a.id !== id);
+    renderAttachments();
+    renderStorageInfo();
+    showToast("图片已移除", "info");
+  }
+
+  function updateAttachmentAngle(id, angle) {
+    const attachment = currentAttachments.find(a => a.id === id);
+    if (attachment) {
+      attachment.angle = angle;
+    }
+  }
+
+  function updateAttachmentDescription(id, description) {
+    const attachment = currentAttachments.find(a => a.id === id);
+    if (attachment) {
+      attachment.description = description;
+    }
+  }
+
+  function showImagePreview(id) {
+    const attachment = currentAttachments.find(a => a.id === id);
+    if (!attachment || !attachment.fullImage) return;
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-image-preview";
+
+    let html = '<div class="image-preview-container">';
+    html += '<img src="' + attachment.fullImage + '" alt="' + attachment.name + '">';
+    html += '</div>';
+    html += '<div class="image-preview-info">';
+    html += '<h3>' + attachment.name + '</h3>';
+    html += '<div class="muted">';
+    html += attachment.width + '×' + attachment.height + ' 像素 · ';
+    html += (attachment.size / 1024).toFixed(1) + ' KB';
+    if (attachment.angle) {
+      html += ' · 角度: ' + (angleNames[attachment.angle] || attachment.angle);
+    }
+    html += '</div>';
+    if (attachment.description) {
+      html += '<div class="image-preview-desc">' + attachment.description + '</div>';
+    }
+    html += '<div class="toolbar" style="margin-top:12px">';
+    html += '<button type="button" class="secondary" id="closePreviewBtn">关闭</button>';
+    html += '</div>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    modal.querySelector("#closePreviewBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+      }
+    };
+  }
+
+  function renderStorageInfo() {
+    const usage = DataIO.getStorageUsage();
+    const percent = (usage.usagePercent * 100).toFixed(1);
+    let statusClass = "storage-ok";
+    if (usage.usagePercent >= 0.9) statusClass = "storage-danger";
+    else if (usage.isNearLimit) statusClass = "storage-warning";
+
+    elements.storageInfo.innerHTML = `
+      <div class="storage-bar">
+        <div class="storage-bar-fill ${statusClass}" style="width: ${percent}%"></div>
+      </div>
+      <div class="storage-text muted small">
+        已用 ${usage.usedMB} MB / 约 ${usage.estimatedQuotaMB} MB
+        <span class="storage-badge ${statusClass}">${percent}%</span>
+      </div>
+    `;
+  }
+
+  function getCurrentAttachments() {
+    return currentAttachments.map(a => ({
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      size: a.size,
+      width: a.width,
+      height: a.height,
+      thumbnail: a.thumbnail,
+      fullImage: a.fullImage,
+      angle: a.angle || "",
+      description: a.description || "",
+      createdAt: a.createdAt,
+    }));
   }
 
   return {
@@ -1422,8 +1669,12 @@ const UI = (() => {
     showImportPreview,
     showToast,
     switchTab,
+    renderAttachments,
+    renderStorageInfo,
+    getCurrentAttachments,
     typeNames,
     weatherNames,
     currentNames,
+    angleNames,
   };
 })();

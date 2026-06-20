@@ -85,6 +85,21 @@
           <label>朝向</label><input name="orientation" placeholder="例如东北偏北">
           <label>保存状态</label><input name="condition" placeholder="例如表面附着贝类">
           <label>备注</label><textarea name="note"></textarea>
+
+          <div class="attachments-section">
+            <div class="attachments-header">
+              <h2>影像证据</h2>
+              <button type="button" id="addAttachmentBtn" class="secondary">添加图片</button>
+            </div>
+            <div class="storage-info" id="storageInfo"></div>
+            <div id="attachmentsList" class="attachments-list"></div>
+            <div id="attachmentsEmpty" class="attachments-empty">
+              <div class="empty-icon">📷</div>
+              <div class="muted">暂无影像证据</div>
+              <div class="muted small">点击"添加图片"按钮上传现场照片</div>
+            </div>
+          </div>
+
           <div class="toolbar">
             <button>保存标记</button>
             <button type="button" id="deleteBtn" class="secondary">删除</button>
