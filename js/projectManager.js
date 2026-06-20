@@ -189,6 +189,12 @@ const ProjectManager = (() => {
     const projects = loadProjects();
     const project = projects.find((p) => p.id === projectId);
     if (!project) return false;
+
+    const activeProjects = projects.filter((p) => !p.archived && p.id !== projectId);
+    if (activeProjects.length === 0) {
+      return false;
+    }
+
     project.archived = true;
     project.updatedAt = new Date().toISOString();
     saveProjects(projects);

@@ -9,6 +9,7 @@ const App = (() => {
   let currentEditMeasureId = null;
   let importErrors = [];
   let currentProject = null;
+  let isFirstInitialization = true;
 
   function setImportErrors(errors) {
     importErrors = errors || [];
@@ -117,7 +118,7 @@ const App = (() => {
     }
   }
 
-  function loadProjectData() {
+  function loadProjectData(includeDefaultData = false) {
     DataIO.setProjectId(currentProject.id);
     marks = DataIO.loadMarks();
     dives = DataIO.loadDives();
@@ -131,7 +132,7 @@ const App = (() => {
       gridConfig = { enabled: false, size: 1, showLabels: true };
     }
 
-    if (!dives.length && !marks.length) {
+    if (includeDefaultData && !dives.length && !marks.length) {
       dives = getDefaultDives();
       marks = getDefaultMarks();
       save();
@@ -143,7 +144,8 @@ const App = (() => {
 
   function init() {
     currentProject = ProjectManager.init();
-    loadProjectData();
+    loadProjectData(isFirstInitialization);
+    isFirstInitialization = false;
 
     document.addEventListener('deleteMeasurement', (e) => {
       handleDeleteMeasurement(e.detail.id);
@@ -235,6 +237,10 @@ const App = (() => {
 
   function handleArchiveProject(projectId) {
     const nextId = ProjectManager.archiveProject(projectId);
+    if (nextId === false) {
+      UI.showToast("无法归档：至少需要保留一个活动项目", "error");
+      return false;
+    }
     if (nextId && typeof nextId === "string") {
       handleSwitchProject(nextId);
     } else if (nextId === null && currentProject && currentProject.id === projectId) {
