@@ -4,6 +4,7 @@ const App = (() => {
   let measurements = [];
   let scale = null;
   let gridConfig = { enabled: false, size: 1, showLabels: true };
+  let baseMap = null;
   let pending = null;
   let currentEditId = null;
   let currentEditMeasureId = null;
@@ -149,6 +150,7 @@ const App = (() => {
     measurements = DataIO.loadMeasurements();
     scale = DataIO.loadScale();
     importErrors = DataIO.loadImportErrors();
+    baseMap = DataIO.loadBaseMap();
     const savedGridConfig = DataIO.loadGridConfig();
     if (savedGridConfig) {
       gridConfig = savedGridConfig;
@@ -190,6 +192,7 @@ const App = (() => {
       onDeleteMeasurement: handleDeleteMeasurement,
       onUpdateScale: handleUpdateScale,
       onUpdateGridConfig: handleUpdateGridConfig,
+      onUpdateBaseMap: handleUpdateBaseMap,
       onExport: handleExport,
       onExportOfflineMerge: handleExportOfflineMerge,
       onImport: handleImport,
@@ -209,6 +212,7 @@ const App = (() => {
       measurements,
       scale,
       gridConfig,
+      baseMap,
       pending,
       currentEditId,
       importErrors,
@@ -241,6 +245,7 @@ const App = (() => {
       measurements,
       scale,
       gridConfig,
+      baseMap,
       pending,
       currentEditId,
       importErrors,
@@ -307,6 +312,7 @@ const App = (() => {
           measurements,
           scale,
           gridConfig,
+          baseMap,
           pending,
           currentEditId,
           importErrors,
@@ -343,6 +349,10 @@ const App = (() => {
 
   function saveGridConfig() {
     DataIO.saveGridConfig(gridConfig);
+  }
+
+  function saveBaseMap() {
+    DataIO.saveBaseMap(baseMap);
   }
 
   function buildReviewFromForm(data, existingMark) {
@@ -625,17 +635,24 @@ const App = (() => {
     saveGridConfig();
   }
 
+  function handleUpdateBaseMap(newBaseMap) {
+    baseMap = newBaseMap;
+    saveBaseMap();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap);
+    UI.showToast(newBaseMap ? "底图已更新" : "底图已重置为默认", "success");
+  }
+
   function handleExport() {
     const projectName = currentProject ? currentProject.name : "dive-records";
     const safeName = projectName.replace(/[^\w\u4e00-\u9fff-]/g, "_");
-    DataIO.exportFullData(marks, dives, measurements, scale, gridConfig, safeName + ".json");
+    DataIO.exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, safeName + ".json");
   }
 
   function handleExportOfflineMerge() {
     const projectName = currentProject ? currentProject.name : "dive-records";
     const safeName = projectName.replace(/[^\w\u4e00-\u9fff-]/g, "_");
     if (typeof MergeModule !== "undefined" && typeof MergeModule.buildExportData === "function") {
-      DataIO.exportOfflineMerge(marks, dives, measurements, scale, gridConfig, safeName + "-offline.json");
+      DataIO.exportOfflineMerge(marks, dives, measurements, scale, gridConfig, baseMap, safeName + "-offline.json");
     } else {
       handleExport();
     }
@@ -679,9 +696,43 @@ const App = (() => {
       const isFullFormatV4 = DataIO.isFullDataFormatV4(parsed.data);
       const isFullFormatV5 = DataIO.isFullDataFormatV5(parsed.data);
       const isFullFormatV6 = DataIO.isFullDataFormatV6(parsed.data);
+      const isFullFormatV7 = DataIO.isFullDataFormatV7(parsed.data);
       let comparison;
 
-      if (isFullFormatV6) {
+      if (isFullFormatV7) {
+        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
+        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
+        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
+
+        if (!markComparison.valid) {
+          UI.showToast(markComparison.errors[0], "error");
+          return;
+        }
+        if (!diveComparison.valid) {
+          UI.showToast(diveComparison.errors[0], "error");
+          return;
+        }
+        if (!measurementComparison.valid) {
+          UI.showToast(measurementComparison.errors[0], "error");
+          return;
+        }
+
+        comparison = {
+          isFullFormat: true,
+          isFullFormatV3: true,
+          isFullFormatV4: true,
+          isFullFormatV5: true,
+          isFullFormatV6: true,
+          isFullFormatV7: true,
+          version: parsed.data.version || "7.0",
+          marks: markComparison,
+          dives: diveComparison,
+          measurements: measurementComparison,
+          scale: parsed.data.scale,
+          gridConfig: parsed.data.gridConfig,
+          baseMap: parsed.data.baseMap,
+        };
+      } else if (isFullFormatV6) {
         const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
         const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
         const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
@@ -1038,6 +1089,10 @@ const App = (() => {
           gridConfig = comparison.gridConfig;
         }
       }
+
+      if (comparison.baseMap !== undefined) {
+        baseMap = comparison.baseMap;
+      }
     }
 
     marks = updatedMarks;
@@ -1051,7 +1106,8 @@ const App = (() => {
     saveMeasurements();
     saveScale();
     saveGridConfig();
-    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
+    saveBaseMap();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap);
 
     const markSummary = comparison.marks?.summary;
     const diveSummary = comparison.dives?.summary;

@@ -5,6 +5,7 @@ const DataIO = (() => {
   const OLD_SCALE_STORAGE_KEY = "zfl30Scale";
   const OLD_GRID_STORAGE_KEY = "zfl30Grid";
   const OLD_IMPORT_ERRORS_STORAGE_KEY = "zfl30ImportErrors";
+  const OLD_BASEMAP_STORAGE_KEY = "zfl30BaseMap";
   const THUMBNAIL_MAX_SIZE = 200;
   const MAX_IMAGE_SIZE_MB = 5;
   const STORAGE_WARNING_THRESHOLD = 0.8;
@@ -25,6 +26,7 @@ const DataIO = (() => {
   function _scaleKey() { return _projectId ? ProjectManager.projKey(_projectId, "scale") : OLD_SCALE_STORAGE_KEY; }
   function _gridKey() { return _projectId ? ProjectManager.projKey(_projectId, "grid") : OLD_GRID_STORAGE_KEY; }
   function _importErrorsKey() { return _projectId ? ProjectManager.projKey(_projectId, "importErrors") : OLD_IMPORT_ERRORS_STORAGE_KEY; }
+  function _baseMapKey() { return _projectId ? ProjectManager.projKey(_projectId, "baseMap") : OLD_BASEMAP_STORAGE_KEY; }
 
   function getDefaultSampling() {
     return {
@@ -170,6 +172,23 @@ const DataIO = (() => {
     localStorage.setItem(_gridKey(), JSON.stringify(config));
   }
 
+  function loadBaseMap() {
+    try {
+      return JSON.parse(localStorage.getItem(_baseMapKey()) || "null");
+    } catch (e) {
+      console.error("Failed to load base map:", e);
+      return null;
+    }
+  }
+
+  function saveBaseMap(baseMap) {
+    if (baseMap) {
+      localStorage.setItem(_baseMapKey(), JSON.stringify(baseMap));
+    } else {
+      localStorage.removeItem(_baseMapKey());
+    }
+  }
+
   function loadImportErrors() {
     try {
       return JSON.parse(localStorage.getItem(_importErrorsKey()) || "[]");
@@ -183,20 +202,21 @@ const DataIO = (() => {
     localStorage.setItem(_importErrorsKey(), JSON.stringify(errors || []));
   }
 
-  function exportFullData(marks, dives, measurements, scale, gridConfig, filename = "dive-records.json") {
+  function exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, filename = "dive-records.json") {
     const processedMarks = marks.map((m) => {
       m = ensureReviewData(m);
       m = ensureSamplingData(m);
       return m;
     });
     const data = {
-      version: "6.0",
+      version: "7.0",
       exportDate: new Date().toISOString(),
       dives: dives,
       marks: processedMarks,
       measurements: measurements || [],
       scale: scale || null,
       gridConfig: gridConfig || null,
+      baseMap: baseMap || null,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -206,7 +226,7 @@ const DataIO = (() => {
     URL.revokeObjectURL(a.href);
   }
 
-  function exportOfflineMerge(marks, dives, measurements, scale, gridConfig, filename = "dive-records-offline.json") {
+  function exportOfflineMerge(marks, dives, measurements, scale, gridConfig, baseMap, filename = "dive-records-offline.json") {
     if (MergeModule && typeof MergeModule.buildExportData === "function") {
       const data = MergeModule.buildExportData(marks, dives, measurements, scale, gridConfig);
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -216,7 +236,7 @@ const DataIO = (() => {
       a.click();
       URL.revokeObjectURL(a.href);
     } else {
-      exportFullData(marks, dives, measurements, scale, gridConfig, filename);
+      exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, filename);
     }
   }
 
@@ -281,7 +301,11 @@ const DataIO = (() => {
   }
 
   function isFullDataFormatV6(data) {
-    return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 6.0;
+    return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 6.0 && parseFloat(data.version) < 7.0;
+  }
+
+  function isFullDataFormatV7(data) {
+    return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 7.0;
   }
 
   function isOfflineMergeFormat(data) {
@@ -373,7 +397,7 @@ const DataIO = (() => {
 
   function getStorageUsage() {
     let totalSize = 0;
-    const keyFn = [_marksKey, _divesKey, _measurementsKey, _scaleKey, _gridKey, _importErrorsKey];
+    const keyFn = [_marksKey, _divesKey, _measurementsKey, _scaleKey, _gridKey, _importErrorsKey, _baseMapKey];
 
     keyFn.forEach((fn) => {
       const value = localStorage.getItem(fn());
@@ -638,12 +662,15 @@ const DataIO = (() => {
     isFullDataFormatV4,
     isFullDataFormatV5,
     isFullDataFormatV6,
+    isFullDataFormatV7,
     isOfflineMergeFormat,
     getDefaultReview,
     ensureReviewData,
     ensureParticipantsData,
     getDefaultSampling,
     ensureSamplingData,
+    loadBaseMap,
+    saveBaseMap,
     generateThumbnail,
     getImageDimensions,
     processImageFile,

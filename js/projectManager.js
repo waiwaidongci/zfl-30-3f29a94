@@ -8,6 +8,7 @@ const ProjectManager = (() => {
     scale: "zfl30Scale",
     grid: "zfl30Grid",
     importErrors: "zfl30ImportErrors",
+    baseMap: "zfl30BaseMap",
   };
 
   const DEFAULT_PROJECT_NAME = "默认遗址";
@@ -74,6 +75,7 @@ const ProjectManager = (() => {
     const scaleRaw = localStorage.getItem(OLD_KEYS.scale);
     const gridRaw = localStorage.getItem(OLD_KEYS.grid);
     const importErrorsRaw = localStorage.getItem(OLD_KEYS.importErrors);
+    const baseMapRaw = localStorage.getItem(OLD_KEYS.baseMap);
 
     if (marksRaw) {
       localStorage.setItem(projKey(projectId, "marks"), marksRaw);
@@ -92,6 +94,9 @@ const ProjectManager = (() => {
     }
     if (importErrorsRaw) {
       localStorage.setItem(projKey(projectId, "importErrors"), importErrorsRaw);
+    }
+    if (baseMapRaw) {
+      localStorage.setItem(projKey(projectId, "baseMap"), baseMapRaw);
     }
 
     projects.push(project);
@@ -227,7 +232,7 @@ const ProjectManager = (() => {
     const idx = projects.findIndex((p) => p.id === projectId);
     if (idx === -1) return false;
 
-    ["marks", "dives", "measurements", "scale", "grid", "importErrors"].forEach((suffix) => {
+    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap"].forEach((suffix) => {
       localStorage.removeItem(projKey(projectId, suffix));
     });
 
@@ -267,7 +272,7 @@ const ProjectManager = (() => {
 
   function getProjectStorageUsage(projectId) {
     let totalSize = 0;
-    ["marks", "dives", "measurements", "scale", "grid", "importErrors"].forEach((suffix) => {
+    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap"].forEach((suffix) => {
       const value = localStorage.getItem(projKey(projectId, suffix));
       if (value) {
         totalSize += new Blob([value]).size;

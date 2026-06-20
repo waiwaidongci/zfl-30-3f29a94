@@ -5,7 +5,7 @@ const Report = (() => {
   const reviewStatusNames = { collected: "采集", pending: "待复核", confirmed: "已确认", revisit: "需返潜" };
 
   function aggregate(options) {
-    const { marks, dives, measurements, scale, gridConfig, importErrors } = options;
+    const { marks, dives, measurements, scale, gridConfig, importErrors, baseMap } = options;
     const scope = options.scope || "all";
     const scopeDive = options.scopeDive || "";
 
@@ -173,6 +173,7 @@ const Report = (() => {
         unit: scale.unit,
       } : null,
       gridConfig: gridConfig || null,
+      baseMap: baseMap || null,
     };
   }
 
@@ -187,6 +188,7 @@ const Report = (() => {
 
   function generateMapSnapshotSVG(data) {
     const marks = data.mapSnapshotMarks || [];
+    const baseMap = data.baseMap || null;
     const svgWidth = 400;
     const svgHeight = 300;
 
@@ -194,9 +196,13 @@ const Report = (() => {
     const wreckColor = "rgba(220,235,224,.55)";
 
     let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgWidth + '" height="' + svgHeight + '" viewBox="0 0 100 75">';
-    svg += '<rect width="100" height="75" fill="' + bgColor + '"/>';
 
-    svg += '<ellipse cx="50" cy="32" rx="26" ry="11.5" fill="none" stroke="' + wreckColor + '" stroke-width="0.8" transform="rotate(-7 50 32)"/>';
+    if (baseMap && baseMap.imageData) {
+      svg += '<image href="' + baseMap.imageData + '" x="0" y="0" width="100" height="75" preserveAspectRatio="none"/>';
+    } else {
+      svg += '<rect width="100" height="75" fill="' + bgColor + '"/>';
+      svg += '<ellipse cx="50" cy="32" rx="26" ry="11.5" fill="none" stroke="' + wreckColor + '" stroke-width="0.8" transform="rotate(-7 50 32)"/>';
+    }
 
     const typeColors = { ceramic: "#b56c38", wood: "#6c4b2f", metal: "#6e7880", unknown: "#725ca6" };
     const statusBorders = { collected: "#2196f3", pending: "#ffc107", confirmed: "#4caf50", revisit: "#e91e63" };

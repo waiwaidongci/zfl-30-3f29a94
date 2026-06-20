@@ -12,6 +12,7 @@ const UI = (() => {
   let measurements = [];
   let scale = null;
   let gridConfig = { enabled: false, size: 1, showLabels: true };
+  let baseMap = null;
   let pending = null;
   let currentEditId = null;
   let currentEditDiveId = null;
@@ -107,6 +108,9 @@ const UI = (() => {
       heatmapOpacityValue: document.querySelector("#heatmapOpacityValue"),
       heatmapLegendBar: document.querySelector("#heatmapLegendBar"),
       heatmapEmptyTip: document.querySelector("#heatmapEmptyTip"),
+      baseMapBtn: document.querySelector("#baseMapBtn"),
+      baseMapImage: document.querySelector("#baseMapImage"),
+      wreckEl: document.querySelector(".wreck"),
       reportBtn: document.querySelector("#reportBtn"),
       projectSelect: document.querySelector("#projectSelect"),
       manageProjectBtn: document.querySelector("#manageProjectBtn"),
@@ -120,6 +124,7 @@ const UI = (() => {
     measurements = deps.measurements || [];
     scale = deps.scale || null;
     gridConfig = deps.gridConfig || { enabled: false, size: 1, showLabels: true };
+    baseMap = deps.baseMap || null;
     pending = deps.pending;
     currentEditId = deps.currentEditId;
     importErrors = deps.importErrors || [];
@@ -141,6 +146,8 @@ const UI = (() => {
     }
 
     initRibs();
+    initBaseMap();
+    renderBaseMap();
     bindEvents(callbacks);
     updateProjectSelector();
     updateDiveSelect();
@@ -165,6 +172,191 @@ const UI = (() => {
       rib.className = "rib";
       rib.style.left = 28 + i * 7 + "%";
       elements.map.appendChild(rib);
+    }
+  }
+
+  function initBaseMap() {
+    const baseMapImg = document.createElement("img");
+    baseMapImg.id = "baseMapImage";
+    baseMapImg.className = "basemap-image";
+    baseMapImg.alt = "沉船平面图底图";
+    elements.map.insertBefore(baseMapImg, elements.map.firstChild);
+    elements.baseMapImage = baseMapImg;
+
+    const toolbar = document.querySelector(".map-toolbar");
+    if (toolbar) {
+      const divider = document.createElement("div");
+      divider.className = "toolbar-divider";
+      toolbar.appendChild(divider);
+
+      const baseMapBtn = document.createElement("button");
+      baseMapBtn.type = "button";
+      baseMapBtn.id = "baseMapBtn";
+      baseMapBtn.className = "secondary";
+      baseMapBtn.textContent = "底图设置";
+      toolbar.appendChild(baseMapBtn);
+      elements.baseMapBtn = baseMapBtn;
+    }
+  }
+
+  function renderBaseMap() {
+    if (!elements.baseMapImage) return;
+
+    if (baseMap && baseMap.imageData) {
+      elements.baseMapImage.src = baseMap.imageData;
+      elements.baseMapImage.style.display = "block";
+      if (elements.wreckEl) {
+        elements.wreckEl.style.display = "none";
+      }
+      document.querySelectorAll(".rib").forEach(rib => {
+        rib.style.display = "none";
+      });
+      elements.map.classList.add("has-custom-basemap");
+    } else {
+      elements.baseMapImage.style.display = "none";
+      if (elements.wreckEl) {
+        elements.wreckEl.style.display = "block";
+      }
+      document.querySelectorAll(".rib").forEach(rib => {
+        rib.style.display = "block";
+      });
+      elements.map.classList.remove("has-custom-basemap");
+    }
+  }
+
+  async function handleBaseMapUpload() {
+    try {
+      const file = await DataIO.triggerImageInput();
+      const processed = await DataIO.processImageFile(file);
+
+      const newBaseMap = {
+        id: crypto.randomUUID(),
+        name: file.name,
+        imageData: processed.fullImage,
+        width: processed.width,
+        height: processed.height,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      if (callbacks && callbacks.onUpdateBaseMap) {
+        callbacks.onUpdateBaseMap(newBaseMap);
+      }
+    } catch (e) {
+      if (e.message !== "No file selected" && e.message !== "File selection cancelled") {
+        showToast("底图上传失败: " + e.message, "error");
+      }
+    }
+  }
+
+  function handleBaseMapReset() {
+    if (confirm("确定要重置为默认沉船示意图吗？")) {
+      if (callbacks && callbacks.onUpdateBaseMap) {
+        callbacks.onUpdateBaseMap(null);
+      }
+    }
+  }
+
+  function showBaseMapModal() {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-basemap";
+
+    let baseMapInfo = "";
+    if (baseMap) {
+      const sizeKB = (new Blob([baseMap.imageData]).size / 1024).toFixed(1);
+      baseMapInfo = `
+        <div class="basemap-preview">
+          <img src="${baseMap.imageData}" alt="当前底图预览">
+        </div>
+        <div class="basemap-details">
+          <div class="muted">文件名：${escapeHtml(baseMap.name || "未命名")}</div>
+          <div class="muted">尺寸：${baseMap.width || "?"} × ${baseMap.height || "?"} 像素</div>
+          <div class="muted">大小：${sizeKB} KB</div>
+          <div class="muted">上传时间：${baseMap.uploadedAt ? new Date(baseMap.uploadedAt).toLocaleString("zh-CN") : "未知"}</div>
+        </div>
+      `;
+    } else {
+      baseMapInfo = `
+        <div class="basemap-preview basemap-preview-default">
+          <div class="basemap-default-hint">当前使用默认沉船示意图</div>
+        </div>
+        <div class="basemap-details">
+          <div class="muted">使用 CSS 绘制的默认沉船平面示意图作为底图</div>
+          <div class="muted">您可以上传自定义的沉船平面图图片作为底图</div>
+        </div>
+      `;
+    }
+
+    modal.innerHTML = `
+      <h2>底图设置</h2>
+      <div class="basemap-modal-content">
+        ${baseMapInfo}
+      </div>
+      <div class="basemap-modal-actions">
+        <button id="basemapUploadBtn" class="secondary">上传图片</button>
+        ${baseMap ? '<button id="basemapResetBtn" class="danger">重置为默认</button>' : ''}
+        <button id="basemapCloseBtn" class="secondary">关闭</button>
+      </div>
+    `;
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+      }
+    };
+
+    const uploadBtn = modal.querySelector("#basemapUploadBtn");
+    if (uploadBtn) {
+      uploadBtn.onclick = async () => {
+        try {
+          const file = await DataIO.triggerImageInput();
+          const processed = await DataIO.processImageFile(file);
+
+          const newBaseMap = {
+            id: crypto.randomUUID(),
+            name: file.name,
+            imageData: processed.fullImage,
+            width: processed.width,
+            height: processed.height,
+            uploadedAt: new Date().toISOString(),
+          };
+
+          if (callbacks && callbacks.onUpdateBaseMap) {
+            callbacks.onUpdateBaseMap(newBaseMap);
+          }
+
+          document.body.removeChild(backdrop);
+          showToast("底图上传成功", "success");
+        } catch (e) {
+          if (e.message !== "No file selected" && e.message !== "File selection cancelled") {
+            showToast("底图上传失败: " + e.message, "error");
+          }
+        }
+      };
+    }
+
+    const resetBtn = modal.querySelector("#basemapResetBtn");
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        if (confirm("确定要重置为默认沉船示意图吗？")) {
+          if (callbacks && callbacks.onUpdateBaseMap) {
+            callbacks.onUpdateBaseMap(null);
+          }
+          document.body.removeChild(backdrop);
+        }
+      };
+    }
+
+    const closeBtn = modal.querySelector("#basemapCloseBtn");
+    if (closeBtn) {
+      closeBtn.onclick = () => {
+        document.body.removeChild(backdrop);
+      };
     }
   }
 
@@ -335,6 +527,9 @@ const UI = (() => {
 
     if (elements.heatmapBtn) {
       elements.heatmapBtn.onclick = toggleHeatmap;
+    }
+    if (elements.baseMapBtn) {
+      elements.baseMapBtn.onclick = showBaseMapModal;
     }
     if (elements.heatmapFilter) {
       elements.heatmapFilter.onchange = () => {
@@ -905,7 +1100,7 @@ const UI = (() => {
     return mark.review?.status || "collected";
   }
 
-  function updateState(newMarks, newDives, newMeasurements, newScale, newGridConfig, newPending, newCurrentEditId, newCurrentEditMeasureId) {
+  function updateState(newMarks, newDives, newMeasurements, newScale, newGridConfig, newPending, newCurrentEditId, newCurrentEditMeasureId, newBaseMap) {
     marks = newMarks;
     dives = newDives;
     measurements = newMeasurements || measurements;
@@ -914,6 +1109,10 @@ const UI = (() => {
     pending = newPending;
     currentEditId = newCurrentEditId;
     currentEditMeasureId = newCurrentEditMeasureId !== undefined ? newCurrentEditMeasureId : currentEditMeasureId;
+    if (newBaseMap !== undefined) {
+      baseMap = newBaseMap;
+      renderBaseMap();
+    }
 
     updateDiveSelect();
     updateDiveFilter();
@@ -3552,6 +3751,7 @@ const UI = (() => {
         measurements,
         scale,
         gridConfig,
+        baseMap,
         scope: scopeSelect.value,
         scopeDive: scopeSelect.value === "dive" ? modal.querySelector("#reportScopeDive").value : "",
         scopeType: scopeSelect.value === "type" ? modal.querySelector("#reportScopeType").value : "",
