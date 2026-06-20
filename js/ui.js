@@ -2025,6 +2025,7 @@ const UI = (() => {
 
     const taskData = {
       id: taskId,
+      key: task.key,
       dive: task.dive,
       type: task.type,
       depthRange: task.depthRange,

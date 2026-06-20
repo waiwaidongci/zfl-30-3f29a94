@@ -29,6 +29,20 @@ const Report = (() => {
     return row + col;
   }
 
+  function buildRevisitTaskKey(dive, type, depthRange, locationZone) {
+    return `${dive || "未知"}|${type || "unknown"}|${depthRange || "未知"}|${locationZone || "未知区域"}`;
+  }
+
+  function hashKeyToStableId(key) {
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+      const chr = key.charCodeAt(i);
+      hash = ((hash << 5) - hash) + chr;
+      hash |= 0;
+    }
+    return "rt-" + Math.abs(hash).toString(36);
+  }
+
   function aggregateRevisitTasks(marks, revisitPlan) {
     const targetMarks = marks.filter(m => {
       const status = m.review?.status || "collected";
@@ -42,10 +56,13 @@ const Report = (() => {
       const type = mark.type || "unknown";
       const depthRange = getDepthRange(mark.depth);
       const locationZone = getLocationZone(mark.x, mark.y);
-      const key = `${dive}|${type}|${depthRange}|${locationZone}`;
+      const key = buildRevisitTaskKey(dive, type, depthRange, locationZone);
+      const stableId = hashKeyToStableId(key);
 
-      if (!groups.has(key)) {
-        groups.set(key, {
+      if (!groups.has(stableId)) {
+        groups.set(stableId, {
+          id: stableId,
+          key,
           dive,
           type,
           depthRange,
@@ -57,7 +74,7 @@ const Report = (() => {
           notes: "",
         });
       }
-      const group = groups.get(key);
+      const group = groups.get(stableId);
       group.markIds.push(mark.id);
       group.marks.push({
         id: mark.id,
@@ -73,12 +90,7 @@ const Report = (() => {
 
     const result = [];
     groups.forEach(group => {
-      const saved = (revisitPlan || []).find(p =>
-        p.dive === group.dive &&
-        p.type === group.type &&
-        p.depthRange === group.depthRange &&
-        p.locationZone === group.locationZone
-      );
+      const saved = (revisitPlan || []).find(p => p.id === group.id);
       if (saved) {
         result.push({
           ...group,
