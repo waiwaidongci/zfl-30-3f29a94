@@ -2409,6 +2409,26 @@ const UI = (() => {
       positionDuplicates: (analysis.marks?.positionDuplicates || []).map(() => "skip"),
     };
 
+    function initAttachmentResolutionsForMarks(markItems) {
+      return (markItems || []).map((item) => {
+        if (!item.attachments) return null;
+        return {
+          new: (item.attachments.new || []).map(() => "add"),
+          sameNameDiffImage: (item.attachments.sameNameDiffImage || []).map(() => "keep"),
+          metaChanged: (item.attachments.metaChanged || []).map(() => "merge"),
+          deleted: (item.attachments.deleted || []).map(() => "keep"),
+        };
+      });
+    }
+
+    const attachmentResolutions = {
+      new: initAttachmentResolutionsForMarks(analysis.marks?.new),
+      modified: initAttachmentResolutionsForMarks(analysis.marks?.modified),
+      deleted: initAttachmentResolutionsForMarks(analysis.marks?.deleted),
+      diverged: initAttachmentResolutionsForMarks(analysis.marks?.diverged),
+      positionDuplicates: initAttachmentResolutionsForMarks(analysis.marks?.positionDuplicates),
+    };
+
     const diveResolutions = {
       new: (analysis.dives?.new || []).map(() => "add"),
       modified: (analysis.dives?.modified || []).map(() => "keep"),
@@ -2495,6 +2515,19 @@ const UI = (() => {
       });
 
       html += "</div>";
+
+      if (currentEntity === "marks" && summary.attachments) {
+        const attStats = summary.attachments;
+        if (attStats.new > 0 || attStats.modified > 0 || attStats.deleted > 0) {
+          html += '<div class="merge-attachment-summary">';
+          html += '<span class="muted small">📷 附件变化：</span>';
+          if (attStats.new > 0) html += '<span class="pill new">' + attStats.new + ' 新增</span>';
+          if (attStats.modified > 0) html += '<span class="pill modified">' + attStats.modified + ' 变化</span>';
+          if (attStats.deleted > 0) html += '<span class="pill deleted">' + attStats.deleted + ' 删除</span>';
+          html += '</div>';
+        }
+      }
+
       return html;
     }
 
@@ -2624,6 +2657,157 @@ const UI = (() => {
       return options[entity]?.[category] || [];
     }
 
+    function getAttachmentResolutionOptions(attCategory) {
+      const options = {
+        new: [
+          { value: "add", label: "添加" },
+          { value: "skip", label: "跳过" },
+        ],
+        sameNameDiffImage: [
+          { value: "keep", label: "保留本地" },
+          { value: "overwrite", label: "覆盖本地" },
+          { value: "keepboth", label: "两者都保留" },
+        ],
+        metaChanged: [
+          { value: "keep", label: "保留本地" },
+          { value: "overwrite", label: "覆盖本地" },
+          { value: "merge", label: "合并说明" },
+        ],
+        deleted: [
+          { value: "keep", label: "保留本地" },
+          { value: "delete", label: "确认删除" },
+        ],
+      };
+      return options[attCategory] || [];
+    }
+
+    function getAttachmentCategoryLabel(category) {
+      const labels = {
+        new: "新增附件",
+        sameNameDiffImage: "同名不同图",
+        metaChanged: "描述/角度变化",
+        unchanged: "未变更附件",
+        deleted: "删除附件",
+      };
+      return labels[category] || category;
+    }
+
+    function renderAttachmentThumbnail(att, size = 64) {
+      if (!att) return "";
+      const thumb = att.thumbnail || att.fullImage || "";
+      if (!thumb) {
+        return `<div class="attachment-thumb-placeholder" style="width:${size}px;height:${size}px;">🖼️</div>`;
+      }
+      return `<img src="${thumb}" alt="${escapeHtml(att.name || '')}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;">`;
+    }
+
+    function renderAttachmentItems(attachmentsAnalysis, markResolutions, markIdx) {
+      if (!attachmentsAnalysis) return "";
+      const categories = ["new", "sameNameDiffImage", "metaChanged", "deleted"];
+      const attResolutions = markResolutions || {};
+
+      let html = '<div class="attachment-merge-section">';
+      let hasContent = false;
+
+      categories.forEach((attCat) => {
+        const items = attachmentsAnalysis[attCat];
+        if (!Array.isArray(items) || items.length === 0) return;
+        hasContent = true;
+        const catLabel = getAttachmentCategoryLabel(attCat);
+        const options = getAttachmentResolutionOptions(attCat);
+        const resolutions = attResolutions[attCat] || [];
+
+        html += `<div class="attachment-merge-category">`;
+        html += `<div class="attachment-merge-category-header"><b>${catLabel}</b><span class="muted small"> (${items.length})</span></div>`;
+        html += `<div class="attachment-merge-list">`;
+
+        items.forEach((item, attIdx) => {
+          const resolution = resolutions[attIdx] || item.resolution || "keep";
+          const localAtt = item.local;
+          const importAtt = item.imported;
+          const displayAtt = importAtt || localAtt;
+          const sizeKB = displayAtt ? ((displayAtt.size || 0) / 1024).toFixed(1) : 0;
+          const angleLabel = displayAtt ? (angleNames[displayAtt.angle] || displayAtt.angle || "未设置") : "";
+
+          html += `<div class="attachment-merge-item" data-mark-idx="${markIdx}" data-att-cat="${attCat}" data-att-idx="${attIdx}">`;
+          html += `<div class="attachment-merge-item-body">`;
+
+          if (attCat === "new") {
+            html += `<div class="attachment-compare-single">`;
+            html += renderAttachmentThumbnail(importAtt);
+            html += `<div class="attachment-merge-info">`;
+            html += `<div class="attachment-merge-name">📥 ${escapeHtml(displayAtt?.name || '未命名')}</div>`;
+            html += `<div class="muted small">${sizeKB} KB · ${displayAtt?.width || 0}×${displayAtt?.height || 0}</div>`;
+            if (displayAtt?.angle) html += `<div class="muted small">角度: ${escapeHtml(angleLabel)}</div>`;
+            if (displayAtt?.description) html += `<div class="muted small">说明: ${escapeHtml(displayAtt.description)}</div>`;
+            html += `</div></div>`;
+          } else if (attCat === "deleted") {
+            html += `<div class="attachment-compare-single">`;
+            html += renderAttachmentThumbnail(localAtt);
+            html += `<div class="attachment-merge-info">`;
+            html += `<div class="attachment-merge-name">🗑️ ${escapeHtml(displayAtt?.name || '未命名')}</div>`;
+            html += `<div class="muted small">${sizeKB} KB · ${displayAtt?.width || 0}×${displayAtt?.height || 0}</div>`;
+            html += `</div></div>`;
+          } else {
+            html += `<div class="attachment-compare-pair">`;
+            html += `<div class="attachment-compare-side">`;
+            html += `<div class="muted small">本地</div>`;
+            html += renderAttachmentThumbnail(localAtt);
+            html += `<div class="attachment-merge-info">`;
+            const localAngle = localAtt ? (angleNames[localAtt.angle] || localAtt.angle || "") : "";
+            if (localAngle) html += `<div class="muted small">角度: ${escapeHtml(localAngle)}</div>`;
+            if (localAtt?.description) html += `<div class="muted small">说明: ${escapeHtml(localAtt.description)}</div>`;
+            html += `</div></div>`;
+            html += `<div class="attachment-compare-arrow">→</div>`;
+            html += `<div class="attachment-compare-side">`;
+            html += `<div class="muted small">导入</div>`;
+            html += renderAttachmentThumbnail(importAtt);
+            html += `<div class="attachment-merge-info">`;
+            const importAngle = importAtt ? (angleNames[importAtt.angle] || importAtt.angle || "") : "";
+            if (importAngle) html += `<div class="muted small">角度: ${escapeHtml(importAngle)}</div>`;
+            if (importAtt?.description) html += `<div class="muted small">说明: ${escapeHtml(importAtt.description)}</div>`;
+            html += `</div></div>`;
+            html += `</div>`;
+          }
+
+          if (item.note) {
+            html += `<div class="merge-item-note">⚠️ ${escapeHtml(item.note)}</div>`;
+          }
+          if (item.diff && item.diff.changed && item.diff.changed.length > 0) {
+            html += `<div class="attachment-diff-summary">`;
+            item.diff.changed.forEach((c) => {
+              const fieldLabel = {
+                name: "文件名",
+                size: "大小",
+                width: "宽度",
+                height: "高度",
+                angle: "角度",
+                description: "说明",
+                content: "图片内容",
+              };
+              html += `<span class="diff-tag">${escapeHtml(fieldLabel[c.field] || c.field)}</span>`;
+            });
+            html += `</div>`;
+          }
+
+          html += `</div>`;
+          html += `<div class="attachment-merge-actions">`;
+          html += `<select data-att-resolution data-att-cat="${attCat}" data-mark-idx="${markIdx}" data-att-idx="${attIdx}">`;
+          options.forEach((opt) => {
+            html += `<option value="${opt.value}" ${resolution === opt.value ? "selected" : ""}>${opt.label}</option>`;
+          });
+          html += `</select>`;
+          html += `</div>`;
+          html += `</div>`;
+        });
+
+        html += `</div></div>`;
+      });
+
+      html += `</div>`;
+      return hasContent ? html : "";
+    }
+
     function renderMergeList() {
       const data = getAnalysisData(currentEntity);
       const items = data[currentCategory] || [];
@@ -2663,6 +2847,17 @@ const UI = (() => {
           if (sampleNo) {
             typePill += ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>';
           }
+          if (item.hasAttachmentChanges && item.attachments) {
+            const attSummary = item.attachments;
+            const attBadgeParts = [];
+            if (attSummary.new && attSummary.new.length > 0) attBadgeParts.push(`➕${attSummary.new.length}`);
+            if (attSummary.sameNameDiffImage && attSummary.sameNameDiffImage.length > 0) attBadgeParts.push(`🔄${attSummary.sameNameDiffImage.length}`);
+            if (attSummary.metaChanged && attSummary.metaChanged.length > 0) attBadgeParts.push(`✏️${attSummary.metaChanged.length}`);
+            if (attSummary.deleted && attSummary.deleted.length > 0) attBadgeParts.push(`🗑️${attSummary.deleted.length}`);
+            if (attBadgeParts.length > 0) {
+              typePill += ' <span class="pill pill-attachments small" title="附件变化">📷 ' + attBadgeParts.join(" ") + "</span>";
+            }
+          }
 
           if (currentCategory === "positionDuplicates") {
             const dist = item.distance || 0;
@@ -2685,6 +2880,13 @@ const UI = (() => {
           }
           if (item.diff) {
             diffHtml = renderDiff(item.diff);
+          }
+          if (item.hasAttachmentChanges && item.attachments) {
+            const markAttResolutions = (attachmentResolutions[currentCategory] || [])[idx];
+            const attHtml = renderAttachmentItems(item.attachments, markAttResolutions, idx);
+            if (attHtml) {
+              diffHtml = (diffHtml || '') + attHtml;
+            }
           }
         } else if (currentEntity === "dives") {
           const dive = item.imported || item.local;
@@ -2870,6 +3072,19 @@ const UI = (() => {
         };
       });
 
+      modal.querySelectorAll("[data-att-resolution]").forEach((select) => {
+        select.onchange = (e) => {
+          const attCat = e.target.dataset.attCat;
+          const markIdx = parseInt(e.target.dataset.markIdx);
+          const attIdx = parseInt(e.target.dataset.attIdx);
+          const category = currentCategory;
+          const markAttResolutions = attachmentResolutions[category]?.[markIdx];
+          if (markAttResolutions && markAttResolutions[attCat] && markAttResolutions[attCat][attIdx] !== undefined) {
+            markAttResolutions[attCat][attIdx] = e.target.value;
+          }
+        };
+      });
+
       modal.querySelectorAll("[data-toggle-detail]").forEach((btn) => {
         btn.onclick = (e) => {
           const idx = parseInt(e.target.dataset.index);
@@ -2915,6 +3130,7 @@ const UI = (() => {
           markResolutions,
           diveResolutions,
           measurementResolutions,
+          attachmentResolutions,
         });
       };
 

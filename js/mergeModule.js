@@ -1,5 +1,5 @@
 const MergeModule = (() => {
-  const MERGE_VERSION = "8.0";
+  const MERGE_VERSION = "8.1";
   const DEVICE_ID_KEY = "zfl30_deviceId";
   const CHANGE_LOG_KEY_SUFFIX = "changeLog";
   const MERGE_SNAPSHOT_KEY_SUFFIX = "mergeSnapshot";
@@ -75,12 +75,61 @@ const MergeModule = (() => {
     localStorage.removeItem(_changeLogKey());
   }
 
+  function buildAttachmentSummary(attachments) {
+    if (!Array.isArray(attachments) || attachments.length === 0) {
+      return { count: 0, totalSize: 0, items: [] };
+    }
+    const items = attachments.map((att) => ({
+      id: att.id,
+      name: att.name,
+      size: att.size,
+      type: att.type,
+      width: att.width,
+      height: att.height,
+      angle: att.angle || "",
+      description: att.description || "",
+      thumbnail: att.thumbnail,
+      hasThumbnail: !!att.thumbnail,
+      hasFullImage: !!att.fullImage,
+      createdAt: att.createdAt,
+      contentHash: att.contentHash || simpleHash(att.fullImage || att.thumbnail || att.name),
+    }));
+    const totalSize = items.reduce((sum, i) => sum + (i.size || 0), 0);
+    return {
+      count: items.length,
+      totalSize: totalSize,
+      totalSizeKB: (totalSize / 1024).toFixed(1),
+      items: items,
+    };
+  }
+
+  function simpleHash(str) {
+    if (!str) return "";
+    let hash = 0;
+    const len = Math.min(str.length, 1000);
+    for (let i = 0; i < len; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash).toString(36);
+  }
+
   function buildExportData(marks, dives, measurements, scale, gridConfig, baseMap) {
     const deviceId = getDeviceId();
     const changeLog = loadChangeLog();
-    const processedMarks = marks.map((m) =>
-      DataIO.ensureReviewData ? DataIO.ensureReviewData({ ...m }) : { ...m }
-    );
+    const processedMarks = marks.map((m) => {
+      const processed = DataIO.ensureReviewData ? DataIO.ensureReviewData({ ...m }) : { ...m };
+      if (processed.attachments && Array.isArray(processed.attachments)) {
+        processed.attachments = processed.attachments.map((att) => ({
+          ...att,
+          contentHash: att.contentHash || simpleHash(att.fullImage || att.thumbnail || att.name),
+        }));
+      }
+      return processed;
+    });
+
+    const attachmentStats = computeAttachmentStats(processedMarks);
 
     return {
       version: MERGE_VERSION,
@@ -97,12 +146,36 @@ const MergeModule = (() => {
         baseMap: baseMap || null,
       },
       changeLog: changeLog,
+      attachmentDigest: attachmentStats,
       stats: {
         markCount: processedMarks.length,
         diveCount: (dives || []).length,
         measurementCount: (measurements || []).length,
         changeLogCount: changeLog.length,
+        attachmentCount: attachmentStats.totalCount,
+        attachmentTotalSizeKB: attachmentStats.totalSizeKB,
       },
+    };
+  }
+
+  function computeAttachmentStats(marks) {
+    let totalCount = 0;
+    let totalSize = 0;
+    const perMark = {};
+
+    marks.forEach((m) => {
+      const atts = m.attachments || [];
+      const summary = buildAttachmentSummary(atts);
+      totalCount += summary.count;
+      totalSize += summary.totalSize;
+      perMark[m.id || m.code] = summary;
+    });
+
+    return {
+      totalCount,
+      totalSize,
+      totalSizeKB: (totalSize / 1024).toFixed(1),
+      perMark,
     };
   }
 
@@ -139,6 +212,36 @@ const MergeModule = (() => {
     const dx = x1 - x2;
     const dy = y1 - y2;
     return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function hasAttachmentChanges(attAnalysis) {
+    if (!attAnalysis) return false;
+    return (
+      (attAnalysis.new && attAnalysis.new.length > 0) ||
+      (attAnalysis.sameNameDiffImage && attAnalysis.sameNameDiffImage.length > 0) ||
+      (attAnalysis.metaChanged && attAnalysis.metaChanged.length > 0) ||
+      (attAnalysis.deleted && attAnalysis.deleted.length > 0)
+    );
+  }
+
+  function countAttachmentChanges(items, key) {
+    if (!Array.isArray(items)) return { new: 0, modified: 0, deleted: 0 };
+    let newCount = 0;
+    let modifiedCount = 0;
+    let deletedCount = 0;
+    items.forEach((item) => {
+      const att = item.attachments;
+      if (!att) return;
+      if (key === "new") {
+        newCount += (att.new || []).length;
+        modifiedCount += (att.sameNameDiffImage || []).length + (att.metaChanged || []).length;
+      } else {
+        newCount += (att.new || []).length;
+        modifiedCount += (att.sameNameDiffImage || []).length + (att.metaChanged || []).length;
+        deletedCount += (att.deleted || []).length;
+      }
+    });
+    return { new: newCount, modified: modifiedCount, deleted: deletedCount };
   }
 
   function findPositionDuplicates(marks1, marks2, threshold = POSITION_THRESHOLD) {
@@ -237,15 +340,20 @@ const MergeModule = (() => {
       const localMarkByCodeMatch = localMarkByCode.get(importMark.code);
 
       if (!localMarkByIdMatch && !localMarkByCodeMatch) {
+        const attachmentAnalysis = analyzeAttachments([], importMark.attachments || []);
         result.marks.new.push({
           imported: importMark,
           resolution: "add",
+          attachments: attachmentAnalysis,
+          hasAttachmentChanges: hasAttachmentChanges(attachmentAnalysis),
         });
       } else if (localMarkByIdMatch) {
-        const isSame = shallowEqual(localMarkByIdMatch, importMark, ["id", "review"]);
+        const isSame = shallowEqual(localMarkByIdMatch, importMark, ["id", "review", "attachments"]);
         const reviewSame = JSON.stringify(localMarkByIdMatch.review) === JSON.stringify(importMark.review);
+        const attachmentAnalysis = analyzeAttachments(localMarkByIdMatch.attachments || [], importMark.attachments || []);
+        const attSame = !hasAttachmentChanges(attachmentAnalysis);
 
-        if (isSame && reviewSame) {
+        if (isSame && reviewSame && attSame) {
           result.marks.unchanged.push({
             local: localMarkByIdMatch,
             imported: importMark,
@@ -269,6 +377,8 @@ const MergeModule = (() => {
                 imported: importMark,
                 resolution: "keep",
                 diff: getMarkDiff(localMarkByIdMatch, importMark),
+                attachments: attachmentAnalysis,
+                hasAttachmentChanges: hasAttachmentChanges(attachmentAnalysis),
               });
             } else {
               result.marks.modified.push({
@@ -276,6 +386,8 @@ const MergeModule = (() => {
                 imported: importMark,
                 resolution: "overwrite",
                 diff: getMarkDiff(localMarkByIdMatch, importMark),
+                attachments: attachmentAnalysis,
+                hasAttachmentChanges: hasAttachmentChanges(attachmentAnalysis),
               });
             }
           } else {
@@ -284,16 +396,21 @@ const MergeModule = (() => {
               imported: importMark,
               resolution: "keep",
               diff: getMarkDiff(localMarkByIdMatch, importMark),
+              attachments: attachmentAnalysis,
+              hasAttachmentChanges: hasAttachmentChanges(attachmentAnalysis),
             });
           }
         }
       } else if (localMarkByCodeMatch) {
+        const attachmentAnalysis = analyzeAttachments(localMarkByCodeMatch.attachments || [], importMark.attachments || []);
         result.marks.diverged.push({
           local: localMarkByCodeMatch,
           imported: importMark,
           resolution: "saveas",
           diff: getMarkDiff(localMarkByCodeMatch, importMark),
           note: "编号相同但ID不同，可能为分叉编辑",
+          attachments: attachmentAnalysis,
+          hasAttachmentChanges: hasAttachmentChanges(attachmentAnalysis),
         });
       }
     });
@@ -496,6 +613,11 @@ const MergeModule = (() => {
       }
     });
 
+    const newAtts = countAttachmentChanges(result.marks.new, "new");
+    const modAtts = countAttachmentChanges(result.marks.modified, "modified");
+    const divAtts = countAttachmentChanges(result.marks.diverged, "diverged");
+    const delAtts = countAttachmentChanges(result.marks.deleted, "deleted");
+
     result.summary = {
       marks: {
         total: validImportMarks.length,
@@ -506,6 +628,11 @@ const MergeModule = (() => {
         positionDuplicates: result.marks.positionDuplicates.length,
         unchanged: result.marks.unchanged.length,
         errors: result.marks.errors.length,
+        attachments: {
+          new: newAtts.new + modAtts.new + divAtts.new,
+          modified: newAtts.modified + modAtts.modified + divAtts.modified,
+          deleted: modAtts.deleted + divAtts.deleted + delAtts.deleted,
+        },
       },
       dives: {
         total: validImportDives.length,
@@ -586,6 +713,150 @@ const MergeModule = (() => {
     return diff;
   }
 
+  function analyzeAttachments(localAttachments, importAttachments) {
+    const result = {
+      new: [],
+      sameNameDiffImage: [],
+      metaChanged: [],
+      unchanged: [],
+      deleted: [],
+    };
+
+    const localAtts = Array.isArray(localAttachments) ? localAttachments : [];
+    const importAtts = Array.isArray(importAttachments) ? importAttachments : [];
+
+    const localById = new Map();
+    const localByName = new Map();
+    localAtts.forEach((att) => {
+      if (att.id) localById.set(att.id, att);
+      if (att.name) localByName.set(att.name, att);
+    });
+
+    const importById = new Map();
+    const importByName = new Map();
+    importAtts.forEach((att) => {
+      if (att.id) importById.set(att.id, att);
+      if (att.name) importByName.set(att.name, att);
+    });
+
+    importAtts.forEach((importAtt) => {
+      const localByIdMatch = importAtt.id ? localById.get(importAtt.id) : null;
+      const localByNameMatch = importAtt.name ? localByName.get(importAtt.name) : null;
+
+      const importHash = importAtt.contentHash || simpleHash(importAtt.fullImage || importAtt.thumbnail || importAtt.name || "");
+
+      if (!localByIdMatch && !localByNameMatch) {
+        result.new.push({
+          imported: importAtt,
+          resolution: "add",
+        });
+      } else if (localByIdMatch) {
+        const localHash = localByIdMatch.contentHash || simpleHash(localByIdMatch.fullImage || localByIdMatch.thumbnail || localByIdMatch.name || "");
+        const hashSame = importHash === localHash;
+        const nameSame = localByIdMatch.name === importAtt.name;
+        const angleSame = (localByIdMatch.angle || "") === (importAtt.angle || "");
+        const descSame = (localByIdMatch.description || "") === (importAtt.description || "");
+
+        if (hashSame && nameSame && angleSame && descSame) {
+          result.unchanged.push({
+            local: localByIdMatch,
+            imported: importAtt,
+          });
+        } else if (!hashSame) {
+          result.sameNameDiffImage.push({
+            local: localByIdMatch,
+            imported: importAtt,
+            resolution: "keep",
+            diff: getAttachmentDiff(localByIdMatch, importAtt),
+          });
+        } else {
+          result.metaChanged.push({
+            local: localByIdMatch,
+            imported: importAtt,
+            resolution: "merge",
+            diff: getAttachmentDiff(localByIdMatch, importAtt),
+          });
+        }
+      } else if (localByNameMatch) {
+        const localHash = localByNameMatch.contentHash || simpleHash(localByNameMatch.fullImage || localByNameMatch.thumbnail || localByNameMatch.name || "");
+        const hashSame = importHash === localHash;
+        const angleSame = (localByNameMatch.angle || "") === (importAtt.angle || "");
+        const descSame = (localByNameMatch.description || "") === (importAtt.description || "");
+
+        if (!hashSame) {
+          result.sameNameDiffImage.push({
+            local: localByNameMatch,
+            imported: importAtt,
+            resolution: "keep",
+            diff: getAttachmentDiff(localByNameMatch, importAtt),
+            note: "文件名相同但内容不同，可能为不同版本",
+          });
+        } else if (!angleSame || !descSame) {
+          result.metaChanged.push({
+            local: localByNameMatch,
+            imported: importAtt,
+            resolution: "merge",
+            diff: getAttachmentDiff(localByNameMatch, importAtt),
+            note: "文件名和内容相同，仅描述或角度不同",
+          });
+        } else {
+          result.unchanged.push({
+            local: localByNameMatch,
+            imported: importAtt,
+          });
+        }
+      }
+    });
+
+    localAtts.forEach((localAtt) => {
+      const inImport = importAtts.some(
+        (ia) => (localAtt.id && ia.id === localAtt.id) || (localAtt.name && ia.name === localAtt.name)
+      );
+      if (!inImport) {
+        result.deleted.push({
+          local: localAtt,
+          resolution: "keep",
+        });
+      }
+    });
+
+    return result;
+  }
+
+  function getAttachmentDiff(localAtt, importAtt) {
+    const diff = {
+      fields: [],
+      changed: [],
+    };
+
+    const fieldsToCompare = ["name", "size", "width", "height", "angle", "description"];
+    fieldsToCompare.forEach((field) => {
+      const localVal = localAtt[field];
+      const importVal = importAtt[field];
+      if (localVal !== importVal) {
+        diff.fields.push(field);
+        diff.changed.push({
+          field,
+          local: localVal,
+          imported: importVal,
+        });
+      }
+    });
+
+    const localHash = localAtt.contentHash || simpleHash(localAtt.fullImage || localAtt.thumbnail || localAtt.name || "");
+    const importHash = importAtt.contentHash || simpleHash(importAtt.fullImage || importAtt.thumbnail || importAtt.name || "");
+    if (localHash !== importHash) {
+      diff.fields.push("content");
+      diff.changed.push({
+        field: "content",
+        local: "图片内容（本地）",
+        imported: "图片内容（导入）",
+      });
+    }
+
+    return diff;
+  }
+
   function getDiveDiff(localDive, importDive) {
     const diff = {
       fields: [],
@@ -629,6 +900,124 @@ const MergeModule = (() => {
     return diff;
   }
 
+  function applyAttachmentResolutions(localAttachments, attachmentAnalysis, attachmentResolutions) {
+    let result = Array.isArray(localAttachments) ? [...localAttachments] : [];
+    const byId = new Map();
+    const byName = new Map();
+    result.forEach((att, idx) => {
+      if (att.id) byId.set(att.id, { att, idx });
+      if (att.name) byName.set(att.name, { att, idx });
+    });
+
+    function updateResultArray() {
+      result = result.filter(Boolean);
+      result.forEach((att, idx) => {
+        if (att.id) byId.set(att.id, { att, idx });
+        if (att.name) byName.set(att.name, { att, idx });
+      });
+    }
+
+    if (attachmentAnalysis?.new && attachmentAnalysis.new.length > 0) {
+      attachmentAnalysis.new.forEach((item, idx) => {
+        const res = attachmentResolutions?.new?.[idx] || item.resolution || "add";
+        if (res === "add") {
+          const importedAtt = { ...item.imported };
+          if (!importedAtt.id) importedAtt.id = crypto.randomUUID();
+          const exists = result.some((a) =>
+            (a.id && a.id === importedAtt.id) || (a.name && a.name === importedAtt.name)
+          );
+          if (!exists) {
+            result.push(importedAtt);
+          }
+        }
+      });
+    }
+
+    if (attachmentAnalysis?.sameNameDiffImage && attachmentAnalysis.sameNameDiffImage.length > 0) {
+      attachmentAnalysis.sameNameDiffImage.forEach((item, idx) => {
+        const res = attachmentResolutions?.sameNameDiffImage?.[idx] || item.resolution || "keep";
+        const localKey = item.local?.id ? "id" : "name";
+        const localVal = item.local?.id || item.local?.name;
+
+        if (res === "overwrite") {
+          const localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+          if (localInfo) {
+            const imported = { ...item.imported, id: item.local.id || crypto.randomUUID() };
+            result[localInfo.idx] = imported;
+          }
+        } else if (res === "keepboth") {
+          const imported = { ...item.imported };
+          const existingCodes = new Set(result.map((a) => a.name));
+          imported.name = generateUniqueAttachmentName(existingCodes, imported.name);
+          imported.id = crypto.randomUUID();
+          result.push(imported);
+        }
+      });
+      updateResultArray();
+    }
+
+    if (attachmentAnalysis?.metaChanged && attachmentAnalysis.metaChanged.length > 0) {
+      attachmentAnalysis.metaChanged.forEach((item, idx) => {
+        const res = attachmentResolutions?.metaChanged?.[idx] || item.resolution || "merge";
+        const localKey = item.local?.id ? "id" : "name";
+        const localVal = item.local?.id || item.local?.name;
+        const localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+
+        if (!localInfo) return;
+
+        if (res === "overwrite") {
+          result[localInfo.idx] = {
+            ...item.imported,
+            id: item.local.id || result[localInfo.idx].id,
+          };
+        } else if (res === "keep") {
+        } else if (res === "merge") {
+          const merged = { ...result[localInfo.idx] };
+          merged.angle = item.imported.angle || merged.angle || "";
+          const localDesc = merged.description || "";
+          const importDesc = item.imported.description || "";
+          if (localDesc && importDesc && localDesc !== importDesc) {
+            merged.description = localDesc + "\n" + importDesc;
+          } else {
+            merged.description = localDesc || importDesc || "";
+          }
+          result[localInfo.idx] = merged;
+        }
+      });
+    }
+
+    if (attachmentAnalysis?.deleted && attachmentAnalysis.deleted.length > 0) {
+      attachmentAnalysis.deleted.forEach((item, idx) => {
+        const res = attachmentResolutions?.deleted?.[idx] || item.resolution || "keep";
+        if (res === "delete") {
+          const localKey = item.local?.id ? "id" : "name";
+          const localVal = item.local?.id || item.local?.name;
+          const localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+          if (localInfo) {
+            result[localInfo.idx] = null;
+          }
+        }
+      });
+      result = result.filter(Boolean);
+    }
+
+    return result;
+  }
+
+  function generateUniqueAttachmentName(existingNames, baseName) {
+    if (!existingNames.has(baseName)) return baseName;
+    const dotIdx = baseName.lastIndexOf(".");
+    const namePart = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
+    const extPart = dotIdx > 0 ? baseName.slice(dotIdx) : "";
+    let counter = 1;
+    let newName;
+    do {
+      newName = `${namePart}_${counter}${extPart}`;
+      counter++;
+    } while (existingNames.has(newName));
+    return newName;
+  }
+
   function applyMerge(localData, analysis, resolutions) {
     let updatedMarks = [...(localData.marks || [])];
     let updatedDives = [...(localData.dives || [])];
@@ -636,7 +1025,7 @@ const MergeModule = (() => {
     let updatedScale = localData.scale || null;
     let updatedGridConfig = localData.gridConfig || null;
 
-    const { markResolutions, diveResolutions, measurementResolutions } =
+    const { markResolutions, diveResolutions, measurementResolutions, attachmentResolutions } =
       resolutions || {};
 
     if (analysis.marks) {
@@ -676,6 +1065,14 @@ const MergeModule = (() => {
             const mark = DataIO.ensureReviewData
               ? DataIO.ensureReviewData({ ...item.imported })
               : { ...item.imported };
+            const markAttResolutions = attachmentResolutions?.new?.[idx];
+            if (item.hasAttachmentChanges && mark.attachments) {
+              mark.attachments = applyAttachmentResolutions(
+                [],
+                item.attachments,
+                markAttResolutions
+              );
+            }
             updatedMarks.push({
               ...mark,
               id: mark.id || crypto.randomUUID(),
@@ -691,6 +1088,7 @@ const MergeModule = (() => {
         if (isPositionDuplicateImport(item.imported)) return;
         const res =
           markResolutions?.modified?.[idx] || item.resolution || "keep";
+        const markAttResolutions = attachmentResolutions?.modified?.[idx];
         if (res === "overwrite") {
           const idx2 = updatedMarks.findIndex(
             (m) => m.id === item.local.id || m.code === item.local.code
@@ -700,6 +1098,15 @@ const MergeModule = (() => {
             const imported = DataIO.ensureReviewData
               ? DataIO.ensureReviewData({ ...item.imported })
               : { ...item.imported };
+            if (item.hasAttachmentChanges) {
+              imported.attachments = applyAttachmentResolutions(
+                oldMark.attachments || [],
+                item.attachments,
+                markAttResolutions
+              );
+            } else {
+              imported.attachments = oldMark.attachments || [];
+            }
             updatedMarks[idx2] = {
               ...imported,
               id: item.local.id,
@@ -715,6 +1122,32 @@ const MergeModule = (() => {
               updatedMarks[idx2]
             );
           }
+        } else if (res === "keep" && item.hasAttachmentChanges) {
+          const idx2 = updatedMarks.findIndex(
+            (m) => m.id === item.local.id || m.code === item.local.code
+          );
+          if (idx2 !== -1) {
+            const oldMark = { ...updatedMarks[idx2] };
+            const mergedAttachments = applyAttachmentResolutions(
+              oldMark.attachments || [],
+              item.attachments,
+              markAttResolutions
+            );
+            updatedMarks[idx2] = {
+              ...oldMark,
+              attachments: mergedAttachments,
+            };
+            if (JSON.stringify(oldMark.attachments || []) !== JSON.stringify(mergedAttachments)) {
+              recordChange(
+                "mark",
+                "modify",
+                item.local.id,
+                item.local.code,
+                oldMark,
+                updatedMarks[idx2]
+              );
+            }
+          }
         }
       });
 
@@ -722,6 +1155,7 @@ const MergeModule = (() => {
         if (isPositionDuplicateImport(item.imported)) return;
         const res =
           markResolutions?.diverged?.[idx] || item.resolution || "saveas";
+        const markAttResolutions = attachmentResolutions?.diverged?.[idx];
         if (res === "overwrite") {
           const idx2 = updatedMarks.findIndex(
             (m) => m.code === item.local.code
@@ -731,6 +1165,15 @@ const MergeModule = (() => {
             const imported = DataIO.ensureReviewData
               ? DataIO.ensureReviewData({ ...item.imported })
               : { ...item.imported };
+            if (item.hasAttachmentChanges) {
+              imported.attachments = applyAttachmentResolutions(
+                oldMark.attachments || [],
+                item.attachments,
+                markAttResolutions
+              );
+            } else {
+              imported.attachments = oldMark.attachments || [];
+            }
             updatedMarks[idx2] = {
               ...imported,
               id: item.local.id,
@@ -753,6 +1196,13 @@ const MergeModule = (() => {
           const imported = DataIO.ensureReviewData
             ? DataIO.ensureReviewData({ ...item.imported })
             : { ...item.imported };
+          if (item.hasAttachmentChanges) {
+            imported.attachments = applyAttachmentResolutions(
+              [],
+              item.attachments,
+              markAttResolutions
+            );
+          }
           const newMark = {
             ...imported,
             id: crypto.randomUUID(),
@@ -762,6 +1212,32 @@ const MergeModule = (() => {
           };
           updatedMarks.push(newMark);
           recordChange("mark", "add", newMark.id, newCode, null, newMark);
+        } else if (res === "keep" && item.hasAttachmentChanges) {
+          const idx2 = updatedMarks.findIndex(
+            (m) => m.id === item.local.id || m.code === item.local.code
+          );
+          if (idx2 !== -1) {
+            const oldMark = { ...updatedMarks[idx2] };
+            const mergedAttachments = applyAttachmentResolutions(
+              oldMark.attachments || [],
+              item.attachments,
+              markAttResolutions
+            );
+            updatedMarks[idx2] = {
+              ...oldMark,
+              attachments: mergedAttachments,
+            };
+            if (JSON.stringify(oldMark.attachments || []) !== JSON.stringify(mergedAttachments)) {
+              recordChange(
+                "mark",
+                "modify",
+                item.local.id,
+                item.local.code,
+                oldMark,
+                updatedMarks[idx2]
+              );
+            }
+          }
         }
       });
 
@@ -1226,7 +1702,10 @@ const MergeModule = (() => {
     buildExportData,
     isOfflineMergeFormat,
     analyzeMerge,
+    analyzeAttachments,
+    getAttachmentDiff,
     applyMerge,
+    applyAttachmentResolutions,
     saveSnapshot,
     loadSnapshot,
     clearSnapshot,
@@ -1236,5 +1715,8 @@ const MergeModule = (() => {
     getMarkDiff,
     getDiveDiff,
     getStats,
+    buildAttachmentSummary,
+    hasAttachmentChanges,
+    simpleHash,
   };
 })();

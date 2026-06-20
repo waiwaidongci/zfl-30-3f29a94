@@ -1364,7 +1364,6 @@ const App = (() => {
     if (typeof UI.hideRollbackNotice === "function") {
       UI.hideRollbackNotice();
     }
-    MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig, baseMap);
 
     const localData = {
       marks,
@@ -1375,6 +1374,23 @@ const App = (() => {
     };
 
     const result = MergeModule.applyMerge(localData, analysis, resolutions);
+
+    const testData = {
+      marks: result.marks,
+      dives: result.dives,
+      measurements: result.measurements,
+      scale: result.scale,
+      gridConfig: result.gridConfig,
+      baseMap: analysis.baseMap || baseMap,
+    };
+    const estimatedSize = new Blob([JSON.stringify(testData)]).size;
+    const capacityCheck = DataIO.checkStorageCapacity(estimatedSize);
+    if (capacityCheck.willExceed) {
+      UI.showToast("合并失败：存储空间不足，请清理附件或导出备份后再试", "error");
+      return;
+    }
+
+    MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig, baseMap);
 
     marks = result.marks;
     dives = result.dives;
@@ -1388,7 +1404,34 @@ const App = (() => {
 
     autoCreateDivesFromMarks();
 
-    save();
+    try {
+      save();
+    } catch (e) {
+      const snapshot = MergeModule.rollbackFromSnapshot();
+      if (snapshot) {
+        marks = snapshot.marks || [];
+        dives = snapshot.dives || [];
+        measurements = snapshot.measurements || [];
+        scale = snapshot.scale || null;
+        gridConfig = snapshot.gridConfig || { enabled: false, size: 1, showLabels: true };
+        baseMap = snapshot.baseMap !== undefined ? snapshot.baseMap : baseMap;
+      }
+      MergeModule.clearSnapshot();
+      UI.showToast("合并失败：保存数据时存储空间不足，已自动回滚", "error");
+      UI.updateState(
+        marks,
+        dives,
+        measurements,
+        scale,
+        gridConfig,
+        pending,
+        currentEditId,
+        currentEditMeasureId,
+        baseMap
+      );
+      return;
+    }
+
     saveDives();
     saveMeasurements();
     saveScale();
@@ -1419,6 +1462,14 @@ const App = (() => {
       if (markModified > 0) parts.push(`标记修改 ${markModified} 项`);
       if (markDiverged > 0) parts.push(`标记分叉 ${markDiverged} 项`);
       if (markDeleted > 0) parts.push(`标记删除 ${markDeleted} 项`);
+      if (summary.marks.attachments) {
+        const attNew = summary.marks.attachments.new || 0;
+        const attMod = summary.marks.attachments.modified || 0;
+        const attDel = summary.marks.attachments.deleted || 0;
+        if (attNew > 0) parts.push(`附件新增 ${attNew} 项`);
+        if (attMod > 0) parts.push(`附件变化 ${attMod} 项`);
+        if (attDel > 0) parts.push(`附件删除 ${attDel} 项`);
+      }
     }
 
     if (summary?.dives) {
@@ -1433,7 +1484,13 @@ const App = (() => {
       if (measAdded > 0) parts.push(`测距新增 ${measAdded} 项`);
     }
 
-    UI.showToast("合并完成：" + (parts.length > 0 ? parts.join("，") : "无变更"), "success");
+    UI.showToast("合并完成：" + (parts.length > 0 ? parts.join("，") : "无变更"), capacityCheck.willWarn ? "warning" : "success");
+
+    if (capacityCheck.willWarn) {
+      setTimeout(() => {
+        UI.showToast("提示：存储空间接近上限，建议清理旧附件或导出备份", "warning");
+      }, 2500);
+    }
 
     const snapshot = MergeModule.loadSnapshot();
     if (snapshot) {
