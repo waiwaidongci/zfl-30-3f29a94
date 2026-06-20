@@ -68,6 +68,23 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
 .marks-in-dive { display: grid; gap: 6px; }
 .mark-in-dive { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #fff; border-radius: 6px; font-size: 13px; }
 
+.participants-section { margin: 12px 0; }
+.participants-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.participants-header h2 { margin: 0; }
+.participants-list { display: grid; gap: 6px; }
+.participant-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #f5fafb; border: 1px solid #d7e4e5; border-radius: 6px; }
+.participant-fields { display: flex; gap: 6px; flex: 1; }
+.participant-fields input { flex: 1; padding: 6px 8px; font-size: 13px; border: 1px solid #d7e4e5; border-radius: 4px; background: #fff; }
+.participant-fields input:focus { border-color: #1d6c78; outline: none; }
+.participant-remove { flex-shrink: 0; }
+.participants-empty { padding: 8px; text-align: center; }
+.pill-participant { background: #e8f5e9; border-color: #4caf50; color: #2e7d32; }
+.pill-role { background: #e3f2fd; border-color: #2196f3; color: #1565c0; }
+.participants-detail-list { display: grid; gap: 6px; }
+.participant-detail-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; background: #fff; border-radius: 6px; }
+.participant-detail-name { font-weight: 600; font-size: 13px; }
+.participant-detail-info { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+
 .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); display: grid; place-items: center; z-index: 1000; }
 .modal { background: #fff; border-radius: 12px; padding: 24px; max-width: 720px; width: 90%; max-height: 85vh; overflow: auto; box-shadow: 0 12px 48px rgba(0,0,0,.3); }
 .modal h2 { margin-top: 0; }

@@ -86,6 +86,19 @@ const DataIO = (() => {
     return mark;
   }
 
+  function ensureParticipantsData(dive) {
+    if (!dive.participants || !Array.isArray(dive.participants)) {
+      dive.participants = [];
+    } else {
+      dive.participants = dive.participants.map(p => ({
+        name: p.name || "",
+        role: p.role || "",
+        equipment: p.equipment || "",
+      }));
+    }
+    return dive;
+  }
+
   function loadMarks() {
     try {
       const raw = JSON.parse(localStorage.getItem(_marksKey()) || "[]");
@@ -106,7 +119,8 @@ const DataIO = (() => {
 
   function loadDives() {
     try {
-      return JSON.parse(localStorage.getItem(_divesKey()) || "[]");
+      const raw = JSON.parse(localStorage.getItem(_divesKey()) || "[]");
+      return raw.map(d => ensureParticipantsData(d));
     } catch (e) {
       console.error("Failed to load dives:", e);
       return [];
@@ -627,6 +641,7 @@ const DataIO = (() => {
     isOfflineMergeFormat,
     getDefaultReview,
     ensureReviewData,
+    ensureParticipantsData,
     getDefaultSampling,
     ensureSamplingData,
     generateThumbnail,

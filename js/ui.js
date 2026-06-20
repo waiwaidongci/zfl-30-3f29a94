@@ -17,6 +17,7 @@ const UI = (() => {
   let currentEditDiveId = null;
   let currentEditMeasureId = null;
   let currentAttachments = [];
+  let currentParticipants = [];
   let activeTab = "marks";
 
   let callbacks = {};
@@ -108,6 +109,9 @@ const UI = (() => {
       reportBtn: document.querySelector("#reportBtn"),
       projectSelect: document.querySelector("#projectSelect"),
       manageProjectBtn: document.querySelector("#manageProjectBtn"),
+      addParticipantBtn: document.querySelector("#addParticipantBtn"),
+      participantsList: document.querySelector("#participantsList"),
+      participantsEmpty: document.querySelector("#participantsEmpty"),
     };
 
     marks = deps.marks;
@@ -203,6 +207,7 @@ const UI = (() => {
     elements.diveForm.onsubmit = (event) => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(elements.diveForm).entries());
+      data.participants = getCurrentParticipants();
       callbacks.onSaveDive(data);
     };
 
@@ -319,6 +324,8 @@ const UI = (() => {
     }
 
     elements.addAttachmentBtn.onclick = handleAddAttachment;
+
+    elements.addParticipantBtn.onclick = handleAddParticipant;
 
     elements.filter.onchange = () => { render(); renderHeatmap(); };
     elements.diveFilter.onchange = () => { render(); renderHeatmap(); };
@@ -1065,6 +1072,7 @@ const UI = (() => {
     const totalDives = dives.length;
     const totalMarks = marks.length;
     const avgMarksPerDive = totalDives > 0 ? (totalMarks / totalDives).toFixed(1) : 0;
+    const totalParticipants = dives.reduce((sum, d) => sum + (d.participants ? d.participants.length : 0), 0);
 
     const typeCounts = marks.reduce((acc, m) => {
       acc[m.type] = (acc[m.type] || 0) + 1;
@@ -1075,7 +1083,7 @@ const UI = (() => {
     statsHtml += '<div class="stat-card"><div class="stat-value">' + totalDives + '</div><div class="stat-label">潜次总数</div></div>';
     statsHtml += '<div class="stat-card"><div class="stat-value">' + totalMarks + '</div><div class="stat-label">标记总数</div></div>';
     statsHtml += '<div class="stat-card"><div class="stat-value">' + avgMarksPerDive + '</div><div class="stat-label">平均每潜次</div></div>';
-    statsHtml += '<div class="stat-card"><div class="stat-value">' + Object.keys(typeCounts).length + '</div><div class="stat-label">类型数</div></div>';
+    statsHtml += '<div class="stat-card"><div class="stat-value">' + totalParticipants + '</div><div class="stat-label">参与人次</div></div>';
     statsHtml += '</div>';
 
     elements.diveStats.innerHTML = statsHtml;
@@ -1084,8 +1092,12 @@ const UI = (() => {
   function renderDiveList() {
     elements.diveList.innerHTML = dives
       .map(
-        (d) =>
-          '<div class="dive-item ' +
+        (d) => {
+          const pCount = d.participants ? d.participants.length : 0;
+          const participantBadge = pCount > 0
+            ? ' <span class="pill pill-participant">' + pCount + '人</span>'
+            : '';
+          return '<div class="dive-item ' +
           (d.id === currentEditDiveId ? "active" : "") +
           '" data-id="' +
           d.id +
@@ -1101,13 +1113,14 @@ const UI = (() => {
           d.visibility +
           '</span></div><div class="dive-item-meta"><span>负责人: ' +
           d.leader +
-          '</span> <span class="muted">标记: ' +
+          '</span>' + participantBadge + ' <span class="muted">标记: ' +
           marks.filter(m => m.dive === d.code).length +
           '个</span></div><div class="dive-item-actions"><button type="button" class="secondary" data-action="edit" data-id="' +
           d.id +
           '">编辑</button><button type="button" class="secondary" data-action="detail" data-id="' +
           d.id +
-          '">详情</button></div></div>'
+          '">详情</button></div></div>';
+        }
       )
       .join("");
 
@@ -1138,6 +1151,8 @@ const UI = (() => {
     if (!dive) return;
 
     const diveMarks = marks.filter(m => m.dive === dive.code);
+    const diveMeasurements = measurements.filter(m => m.dive === dive.code);
+    const participants = dive.participants || [];
 
     let detailHtml = '<div class="detail-section">';
     detailHtml += '<h3>基本信息</h3>';
@@ -1156,6 +1171,23 @@ const UI = (() => {
     detailHtml += '<div class="objective-text">' + dive.objective + '</div>';
     detailHtml += '</div>';
 
+    if (participants.length > 0) {
+      detailHtml += '<div class="detail-section">';
+      detailHtml += '<h3>参与人员与设备 (' + participants.length + '人)</h3>';
+      detailHtml += '<div class="participants-detail-list">';
+      participants.forEach(p => {
+        detailHtml += '<div class="participant-detail-item">';
+        detailHtml += '<div class="participant-detail-name">' + escapeHtml(p.name || "未填写") + '</div>';
+        detailHtml += '<div class="participant-detail-info">';
+        if (p.role) detailHtml += '<span class="pill pill-role">' + escapeHtml(p.role) + '</span>';
+        if (p.equipment) detailHtml += '<span class="muted">设备: ' + escapeHtml(p.equipment) + '</span>';
+        detailHtml += '</div>';
+        detailHtml += '</div>';
+      });
+      detailHtml += '</div>';
+      detailHtml += '</div>';
+    }
+
     detailHtml += '<div class="detail-section">';
     detailHtml += '<h3>关联标记 (' + diveMarks.length + '个)</h3>';
     if (diveMarks.length > 0) {
@@ -1169,6 +1201,17 @@ const UI = (() => {
       detailHtml += '<div class="muted">该潜次暂无关联标记</div>';
     }
     detailHtml += '</div>';
+
+    if (diveMeasurements.length > 0) {
+      detailHtml += '<div class="detail-section">';
+      detailHtml += '<h3>关联测距 (' + diveMeasurements.length + '条)</h3>';
+      detailHtml += '<div class="marks-in-dive">';
+      diveMeasurements.forEach(m => {
+        detailHtml += '<div class="mark-in-dive"><span class="pill pill-measure">' + Number(m.length).toFixed(2) + ' 米</span> <b>' + m.code + '</b>' + (m.note ? ' · ' + escapeHtml(m.note) : '') + '</div>';
+      });
+      detailHtml += '</div>';
+      detailHtml += '</div>';
+    }
 
     elements.diveDetailContent.innerHTML = detailHtml;
     elements.diveDetail.classList.remove("hidden");
@@ -1621,6 +1664,8 @@ const UI = (() => {
       if (elements.diveForm[key]) elements.diveForm[key].value = value;
     }
     currentEditDiveId = id;
+    currentParticipants = dive.participants ? JSON.parse(JSON.stringify(dive.participants)) : [];
+    renderParticipants();
     renderDives();
   }
 
@@ -1642,6 +1687,8 @@ const UI = (() => {
     elements.diveForm.reset();
     elements.diveForm.id.value = "";
     currentEditDiveId = null;
+    currentParticipants = [];
+    renderParticipants();
     elements.diveDetail.classList.add("hidden");
   }
 
@@ -2830,6 +2877,60 @@ const UI = (() => {
     }));
   }
 
+  function handleAddParticipant() {
+    currentParticipants.push({ name: "", role: "", equipment: "" });
+    renderParticipants();
+  }
+
+  function renderParticipants() {
+    const container = elements.participantsList;
+    const emptyTip = elements.participantsEmpty;
+
+    if (currentParticipants.length === 0) {
+      container.innerHTML = "";
+      emptyTip.classList.remove("hidden");
+      return;
+    }
+
+    emptyTip.classList.add("hidden");
+
+    container.innerHTML = currentParticipants.map((p, idx) => {
+      return '<div class="participant-item" data-idx="' + idx + '">' +
+        '<div class="participant-fields">' +
+        '<input type="text" class="participant-name" placeholder="姓名" value="' + escapeHtml(p.name) + '">' +
+        '<input type="text" class="participant-role" placeholder="岗位（如：采样员）" value="' + escapeHtml(p.role) + '">' +
+        '<input type="text" class="participant-equipment" placeholder="使用设备" value="' + escapeHtml(p.equipment) + '">' +
+        '</div>' +
+        '<button type="button" class="secondary small participant-remove" data-idx="' + idx + '" title="删除">✕</button>' +
+        '</div>';
+    }).join("");
+
+    container.querySelectorAll(".participant-name").forEach((input, idx) => {
+      input.oninput = () => { currentParticipants[idx].name = input.value; };
+    });
+    container.querySelectorAll(".participant-role").forEach((input, idx) => {
+      input.oninput = () => { currentParticipants[idx].role = input.value; };
+    });
+    container.querySelectorAll(".participant-equipment").forEach((input, idx) => {
+      input.oninput = () => { currentParticipants[idx].equipment = input.value; };
+    });
+    container.querySelectorAll(".participant-remove").forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        currentParticipants.splice(idx, 1);
+        renderParticipants();
+      };
+    });
+  }
+
+  function getCurrentParticipants() {
+    return currentParticipants.map(p => ({
+      name: p.name || "",
+      role: p.role || "",
+      equipment: p.equipment || "",
+    }));
+  }
+
   const CSV_FIELD_LABELS = {
     code: "编号",
     type: "类型",
@@ -3447,6 +3548,8 @@ const UI = (() => {
       .report-dive-block { margin: 12px 0; padding: 12px; border: 1px solid #d7e4e5; border-radius: 6px; page-break-inside: avoid; }
       .report-dive-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
       .report-dive-objective { padding: 8px; background: #f5fafb; border-radius: 4px; margin: 8px 0; font-size: 13px; line-height: 1.5; }
+      .report-dive-participants { margin: 8px 0; }
+      .report-dive-participants-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
       .report-scale-info { font-size: 13px; color: #5c7378; }
       .report-import-summary { background: #f5fafb; border: 1px solid #d7e4e5; border-radius: 6px; padding: 8px 12px; margin: 8px 0 12px; font-size: 12px; }
       .muted { color: #5c7378; font-size: 13px; }
@@ -3476,6 +3579,7 @@ const UI = (() => {
     currentEditDiveId = null;
     currentEditMeasureId = null;
     currentAttachments = [];
+    currentParticipants = [];
     activeTab = "marks";
     isCalibrating = false;
     calibratePoints = [];

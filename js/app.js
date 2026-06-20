@@ -31,6 +31,11 @@ const App = (() => {
         current: "weak",
         visibility: "5-8米",
         objective: "勘查船艉区域，采集陶瓷标本",
+        participants: [
+          { name: "张教授", role: "潜次负责人", equipment: "潜水表、水下相机" },
+          { name: "王研究员", role: "采样员", equipment: "采样箱、标签贴纸" },
+          { name: "李技术员", role: "摄像记录", equipment: "水下摄像机、照明灯" },
+        ],
       },
       {
         id: crypto.randomUUID(),
@@ -41,6 +46,10 @@ const App = (() => {
         current: "moderate",
         visibility: "3-5米",
         objective: "记录船体结构，测量船肋间距",
+        participants: [
+          { name: "李研究员", role: "潜次负责人", equipment: "测量板、卷尺" },
+          { name: "赵技术员", role: "测绘员", equipment: "全站仪、标志浮标" },
+        ],
       },
     ];
   }
@@ -120,6 +129,7 @@ const App = (() => {
           current: "calm",
           visibility: "待记录",
           objective: "请补充任务目标",
+          participants: [],
         });
       }
     });
@@ -472,6 +482,8 @@ const App = (() => {
   }
 
   function handleSaveDive(data) {
+    const participants = data.participants || [];
+    delete data.participants;
     const oldCode = data.id ? dives.find(d => d.id === data.id)?.code : null;
 
     if (data.id) {
@@ -479,6 +491,7 @@ const App = (() => {
       if (dive) {
         const beforeData = JSON.parse(JSON.stringify(dive));
         Object.assign(dive, data);
+        dive.participants = participants;
         if (oldCode && oldCode !== data.code) {
           marks.forEach(m => {
             if (m.dive === oldCode) {
@@ -503,6 +516,7 @@ const App = (() => {
       const newDive = {
         ...data,
         id: crypto.randomUUID(),
+        participants: participants,
       };
       dives.push(newDive);
       recordChange("dive", "add", newDive.id, newDive.code, null, newDive);

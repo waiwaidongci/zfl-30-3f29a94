@@ -66,6 +66,11 @@ const Report = (() => {
         current: currentNames[d.current] || d.current,
         visibility: d.visibility,
         objective: d.objective,
+        participants: (d.participants || []).map(p => ({
+          name: p.name || "",
+          role: p.role || "",
+          equipment: p.equipment || "",
+        })),
         markCount: diveMarks.length,
         marks: diveMarks.map(m => ({
           code: m.code,
@@ -152,6 +157,7 @@ const Report = (() => {
       totalMarks: filteredMarks.length,
       totalDives: filteredDives.length,
       totalMeasurements: filteredMeasurements.length,
+      totalParticipants: filteredDives.reduce((sum, d) => sum + (d.participants ? d.participants.length : 0), 0),
       typeCounts,
       reviewCounts,
       conditionCounts,
@@ -229,6 +235,7 @@ const Report = (() => {
     html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalDives + '</div><div class="report-stat-label">潜次</div></div>';
     html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalMarks + '</div><div class="report-stat-label">标记</div></div>';
     html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalMeasurements + '</div><div class="report-stat-label">测距</div></div>';
+    html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalParticipants + '</div><div class="report-stat-label">参与人次</div></div>';
     html += '<div class="report-stat-card"><div class="report-stat-value">' + data.highlightMarks.length + '</div><div class="report-stat-label">重点标记</div></div>';
     html += '</div>';
     html += '</div>';
@@ -303,6 +310,21 @@ const Report = (() => {
         html += '<span class="muted">' + dive.date + ' · ' + escapeHtml(dive.leader) + ' · ' + dive.weather + ' · ' + dive.current + ' · 能见度: ' + escapeHtml(dive.visibility) + '</span>';
         html += '</div>';
         html += '<div class="report-dive-objective">' + escapeHtml(dive.objective) + '</div>';
+
+        if (dive.participants && dive.participants.length > 0) {
+          html += '<div class="report-dive-participants">';
+          html += '<div class="report-dive-participants-title">参与人员 (' + dive.participants.length + '人)</div>';
+          html += '<table class="report-table"><thead><tr><th>姓名</th><th>岗位</th><th>使用设备</th></tr></thead><tbody>';
+          dive.participants.forEach(p => {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(p.name || "—") + '</td>';
+            html += '<td>' + escapeHtml(p.role || "—") + '</td>';
+            html += '<td>' + escapeHtml(p.equipment || "—") + '</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+          html += '</div>';
+        }
 
         if (dive.marks.length > 0) {
           html += '<table class="report-table"><thead><tr><th>编号</th><th>类型</th><th>深度</th><th>朝向</th><th>保存状态</th><th>样品编号</th><th>采样方式</th><th>采样人</th><th>采样时间</th><th>审核状态</th></tr></thead><tbody>';

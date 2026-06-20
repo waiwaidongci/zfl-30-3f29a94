@@ -210,6 +210,16 @@
           </select>
           <label>能见度</label><input name="visibility" placeholder="例如5-8米" required>
           <label>任务目标</label><textarea name="objective" placeholder="例如勘查船艉区域，采集陶瓷标本" required></textarea>
+          <div class="participants-section">
+            <div class="participants-header">
+              <h2>参与人员与设备</h2>
+              <button type="button" id="addParticipantBtn" class="secondary">添加人员</button>
+            </div>
+            <div id="participantsList" class="participants-list"></div>
+            <div id="participantsEmpty" class="participants-empty">
+              <div class="muted small">暂无人员记录，点击"添加人员"按钮添加</div>
+            </div>
+          </div>
           <div class="toolbar">
             <button>保存潜次</button>
             <button type="button" id="deleteDiveBtn" class="secondary">删除</button>
