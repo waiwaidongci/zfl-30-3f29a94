@@ -75,6 +75,12 @@ const App = (() => {
         orientation: "东",
         condition: "边缘残缺",
         note: "靠近船肋",
+        sampling: {
+          sampleNo: "",
+          sampleMethod: "",
+          sampler: "",
+          sampleTime: "",
+        },
         review: getDefaultReview("collected"),
       },
       {
@@ -88,6 +94,12 @@ const App = (() => {
         orientation: "西北",
         condition: "稳定",
         note: "疑似横梁",
+        sampling: {
+          sampleNo: "",
+          sampleMethod: "",
+          sampler: "",
+          sampleTime: "",
+        },
         review: getDefaultReview("pending"),
       },
     ];
@@ -368,12 +380,24 @@ const App = (() => {
     delete data.reviewComment;
     delete data.reviewer;
 
+    const sampleNo = data.sampleNo || "";
+    const sampleMethod = data.sampleMethod || "";
+    const sampler = data.sampler || "";
+    const sampleTime = data.sampleTime || "";
+    delete data.sampleNo;
+    delete data.sampleMethod;
+    delete data.sampler;
+    delete data.sampleTime;
+
+    const sampling = { sampleNo, sampleMethod, sampler, sampleTime };
+
     if (data.id) {
       const mark = marks.find((m) => m.id === data.id);
       if (mark) {
         const beforeData = JSON.parse(JSON.stringify(mark));
         Object.assign(mark, data, pendingPos);
         mark.attachments = attachments;
+        mark.sampling = sampling;
         mark.review = buildReviewFromForm(
           { reviewStatus, reviewComment, reviewer },
           mark
@@ -386,6 +410,7 @@ const App = (() => {
         id: crypto.randomUUID(),
         ...pendingPos,
         attachments: attachments,
+        sampling: sampling,
       };
       newMark.review = buildReviewFromForm(
         { reviewStatus, reviewComment, reviewer },
@@ -816,6 +841,12 @@ const App = (() => {
               orientation: mapped.orientation ? mapped.orientation.trim() : "",
               condition: mapped.condition ? mapped.condition.trim() : "",
               note: mapped.note ? mapped.note.trim() : "",
+              sampling: {
+                sampleNo: mapped.sampleNo ? mapped.sampleNo.trim() : "",
+                sampleMethod: mapped.sampleMethod ? mapped.sampleMethod.trim() : "",
+                sampler: mapped.sampler ? mapped.sampler.trim() : "",
+                sampleTime: mapped.sampleTime ? mapped.sampleTime.trim() : "",
+              },
             };
 
             if (mapped.x !== undefined) {

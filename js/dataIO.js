@@ -26,6 +26,27 @@ const DataIO = (() => {
   function _gridKey() { return _projectId ? ProjectManager.projKey(_projectId, "grid") : OLD_GRID_STORAGE_KEY; }
   function _importErrorsKey() { return _projectId ? ProjectManager.projKey(_projectId, "importErrors") : OLD_IMPORT_ERRORS_STORAGE_KEY; }
 
+  function getDefaultSampling() {
+    return {
+      sampleNo: "",
+      sampleMethod: "",
+      sampler: "",
+      sampleTime: "",
+    };
+  }
+
+  function ensureSamplingData(mark) {
+    if (!mark.sampling) {
+      mark.sampling = getDefaultSampling();
+    } else {
+      if (mark.sampling.sampleNo === undefined) mark.sampling.sampleNo = "";
+      if (mark.sampling.sampleMethod === undefined) mark.sampling.sampleMethod = "";
+      if (mark.sampling.sampler === undefined) mark.sampling.sampler = "";
+      if (mark.sampling.sampleTime === undefined) mark.sampling.sampleTime = "";
+    }
+    return mark;
+  }
+
   function getDefaultReview() {
     return {
       status: "collected",
@@ -68,7 +89,11 @@ const DataIO = (() => {
   function loadMarks() {
     try {
       const raw = JSON.parse(localStorage.getItem(_marksKey()) || "[]");
-      return raw.map((m) => ensureReviewData(m));
+      return raw.map((m) => {
+        m = ensureReviewData(m);
+        m = ensureSamplingData(m);
+        return m;
+      });
     } catch (e) {
       console.error("Failed to load marks:", e);
       return [];
@@ -145,7 +170,11 @@ const DataIO = (() => {
   }
 
   function exportFullData(marks, dives, measurements, scale, gridConfig, filename = "dive-records.json") {
-    const processedMarks = marks.map((m) => ensureReviewData(m));
+    const processedMarks = marks.map((m) => {
+      m = ensureReviewData(m);
+      m = ensureSamplingData(m);
+      return m;
+    });
     const data = {
       version: "6.0",
       exportDate: new Date().toISOString(),
@@ -380,6 +409,10 @@ const DataIO = (() => {
     orientation: ["朝向", "方向", "orientation", "direction", "方位", "摆放方向"],
     condition: ["保存状态", "保存状况", "condition", "状态", "保存情况", "文物状态"],
     note: ["备注", "说明", "note", "remark", "comment", "描述", "附注"],
+    sampleNo: ["样品编号", "样本编号", "sampleNo", "sample_no", "采样编号", "标本号"],
+    sampleMethod: ["采样方式", "采样方法", "sampleMethod", "sample_method", "采集方式"],
+    sampler: ["采样人", "采集人", "sampler", "采样员"],
+    sampleTime: ["采样时间", "采集时间", "sampleTime", "sample_time", "采样日期"],
   };
 
   const TYPE_NAME_MAPPINGS = {
@@ -517,6 +550,12 @@ const DataIO = (() => {
       orientation: mapped.orientation ? mapped.orientation.trim() : "",
       condition: mapped.condition ? mapped.condition.trim() : "",
       note: mapped.note ? mapped.note.trim() : "",
+      sampling: {
+        sampleNo: mapped.sampleNo ? mapped.sampleNo.trim() : "",
+        sampleMethod: mapped.sampleMethod ? mapped.sampleMethod.trim() : "",
+        sampler: mapped.sampler ? mapped.sampler.trim() : "",
+        sampleTime: mapped.sampleTime ? mapped.sampleTime.trim() : "",
+      },
     };
 
     if (mapped.x !== undefined) {
@@ -588,6 +627,8 @@ const DataIO = (() => {
     isOfflineMergeFormat,
     getDefaultReview,
     ensureReviewData,
+    getDefaultSampling,
+    ensureSamplingData,
     generateThumbnail,
     getImageDimensions,
     processImageFile,

@@ -687,6 +687,30 @@ button.small {
   color: #c2185b;
 }
 
+.pill-sampling {
+  background: #f3e5f5;
+  border-color: #9c27b0;
+  color: #7b1fa2;
+  font-weight: 600;
+  border-width: 2px;
+}
+
+.pill-sampling.small {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.sampling-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.sampling-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+}
+
 .marker.review-status-collected {
   border-color: #2196f3;
   box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);

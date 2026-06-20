@@ -979,6 +979,10 @@ const UI = (() => {
             : '';
           const status = getReviewStatus(m);
           const statusBadge = '<span class="pill pill-review pill-review-' + status + '">' + reviewStatusNames[status] + '</span>';
+          const sampleNo = m.sampling?.sampleNo;
+          const sampleBadge = sampleNo 
+            ? '<span class="pill pill-sampling" title="样品编号: ' + escapeHtml(sampleNo) + '">🧪 ' + escapeHtml(sampleNo) + '</span>' 
+            : '';
           return '<div class="item ' +
             (m.id === currentEditId ? "active" : "") +
             '" data-id="' +
@@ -987,7 +991,7 @@ const UI = (() => {
             m.code +
             '</b> <span class="pill">' +
             typeNames[m.type] +
-            '</span>' + statusBadge + attBadge + '</div><div class="muted">' +
+            '</span>' + statusBadge + sampleBadge + attBadge + '</div><div class="muted">' +
             m.dive +
             " · " +
             m.depth +
@@ -1215,6 +1219,8 @@ const UI = (() => {
     const attCount = mark.attachments ? mark.attachments.length : 0;
     const comment = mark.review?.comment || "";
     const shortComment = comment.length > 30 ? comment.slice(0, 30) + "..." : comment;
+    const sampleNo = mark.sampling?.sampleNo;
+    const sampleBadge = sampleNo ? ' <span class="pill pill-sampling small" title="样品编号: ' + escapeHtml(sampleNo) + '">🧪 ' + escapeHtml(sampleNo) + '</span>' : '';
 
     let statusButtons = "";
     REVIEW_STATUSES.forEach((s) => {
@@ -1227,6 +1233,7 @@ const UI = (() => {
       '<div class="review-card-header">' +
       '<b>' + mark.code + '</b>' +
       '<span class="pill ' + mark.type + '">' + typeNames[mark.type] + '</span>' +
+      sampleBadge +
       (attCount > 0 ? '<span class="attachment-badge">📷 ' + attCount + '</span>' : '') +
       '</div>' +
       '<div class="review-card-info">' +
@@ -1358,6 +1365,18 @@ const UI = (() => {
     if (mark.condition) html += '<div><span class="muted">保存状态</span><div>' + mark.condition + '</div></div>';
     if (mark.note) html += '<div><span class="muted">备注</span><div>' + mark.note + '</div></div>';
     html += '</div>';
+
+    const hasSampling = mark.sampling && (mark.sampling.sampleNo || mark.sampling.sampleMethod || mark.sampling.sampler || mark.sampling.sampleTime);
+    if (hasSampling) {
+      html += '<div class="detail-section">';
+      html += '<h3>采样记录</h3>';
+      html += '<div class="detail-grid">';
+      if (mark.sampling.sampleNo) html += '<div><span class="muted">样品编号</span><div>' + escapeHtml(mark.sampling.sampleNo) + '</div></div>';
+      if (mark.sampling.sampleMethod) html += '<div><span class="muted">采样方式</span><div>' + escapeHtml(mark.sampling.sampleMethod) + '</div></div>';
+      if (mark.sampling.sampler) html += '<div><span class="muted">采样人</span><div>' + escapeHtml(mark.sampling.sampler) + '</div></div>';
+      if (mark.sampling.sampleTime) html += '<div><span class="muted">采样时间</span><div>' + escapeHtml(mark.sampling.sampleTime) + '</div></div>';
+      html += '</div></div>';
+    }
 
     html += '<div class="detail-section">';
     html += '<h3>复核意见</h3>';
@@ -1556,6 +1575,17 @@ const UI = (() => {
     for (const [key, value] of Object.entries(mark)) {
       if (elements.form[key]) elements.form[key].value = value;
     }
+    if (mark.sampling) {
+      if (elements.form.sampleNo) elements.form.sampleNo.value = mark.sampling.sampleNo || "";
+      if (elements.form.sampleMethod) elements.form.sampleMethod.value = mark.sampling.sampleMethod || "";
+      if (elements.form.sampler) elements.form.sampler.value = mark.sampling.sampler || "";
+      if (elements.form.sampleTime) elements.form.sampleTime.value = mark.sampling.sampleTime || "";
+    } else {
+      if (elements.form.sampleNo) elements.form.sampleNo.value = "";
+      if (elements.form.sampleMethod) elements.form.sampleMethod.value = "";
+      if (elements.form.sampler) elements.form.sampler.value = "";
+      if (elements.form.sampleTime) elements.form.sampleTime.value = "";
+    }
     if (mark.review) {
       if (elements.form.reviewStatus) elements.form.reviewStatus.value = mark.review.status || "collected";
       if (elements.form.reviewComment) elements.form.reviewComment.value = mark.review.comment || "";
@@ -1586,6 +1616,10 @@ const UI = (() => {
   function resetForm() {
     elements.form.reset();
     elements.form.id.value = "";
+    if (elements.form.sampleNo) elements.form.sampleNo.value = "";
+    if (elements.form.sampleMethod) elements.form.sampleMethod.value = "";
+    if (elements.form.sampler) elements.form.sampler.value = "";
+    if (elements.form.sampleTime) elements.form.sampleTime.value = "";
     currentEditId = null;
     pending = null;
     currentAttachments = [];
@@ -1712,6 +1746,8 @@ const UI = (() => {
       if (markComparison.newMarks.length > 0) {
         html += '<div class="preview-list">';
         markComparison.newMarks.forEach((mark) => {
+          const sampleNo = mark.sampling?.sampleNo;
+          const sampleBadge = sampleNo ? ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>' : '';
           html +=
             '<div class="preview-item"><span><b>' +
             mark.code +
@@ -1721,6 +1757,7 @@ const UI = (() => {
             mark.dive +
             " · " +
             mark.depth +
+            sampleBadge +
             "</span><span class='pill pill-new'>新增</span></div>";
         });
         html += "</div>";
@@ -1764,6 +1801,8 @@ const UI = (() => {
             }
             reviewDiffHtml += '</div>';
           }
+          const sampleNo = conflict.imported.sampling?.sampleNo;
+          const sampleBadge = sampleNo ? ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>' : '';
           html +=
             '<div class="preview-item preview-item-conflict" data-mark-conflict-index="' +
             idx + '"><div class="preview-item-main"><span><b>' +
@@ -1772,6 +1811,7 @@ const UI = (() => {
             typeNames[conflict.imported.type] +
             ' · ' +
             conflict.imported.dive +
+            sampleBadge +
             "</span>";
           html += '<select data-mark-resolution-index="' + idx + '">';
           html += '<option value="keep">保留本地</option>';
@@ -2223,6 +2263,10 @@ const UI = (() => {
             '">' +
             (typeNames[mark.type] || "未知") +
             "</span>";
+          const sampleNo = mark.sampling?.sampleNo;
+          if (sampleNo) {
+            typePill += ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>';
+          }
 
           if (currentCategory === "positionDuplicates") {
             const dist = item.distance || 0;
@@ -2756,6 +2800,10 @@ const UI = (() => {
     orientation: "朝向",
     condition: "保存状态",
     note: "备注",
+    sampleNo: "样品编号",
+    sampleMethod: "采样方式",
+    sampler: "采样人",
+    sampleTime: "采样时间",
   };
 
   const CSV_FIELDS_ORDER = [
@@ -2768,6 +2816,10 @@ const UI = (() => {
     "orientation",
     "condition",
     "note",
+    "sampleNo",
+    "sampleMethod",
+    "sampler",
+    "sampleTime",
   ];
 
   function showCSVFieldMappingPreview(csvParseResult, onConfirm, onCancel) {

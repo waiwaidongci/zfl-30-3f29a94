@@ -9,6 +9,37 @@ const Validation = (() => {
   const ATTACHMENT_REQUIRED_FIELDS = ["id", "name", "thumbnail"];
   const VALID_ANGLES = ["top", "side", "front", "back", "detail", "overview", "other"];
 
+  function validateSampling(sampling, index) {
+    const errors = [];
+
+    if (sampling === undefined || sampling === null) {
+      return { valid: true, errors, sampling };
+    }
+
+    if (typeof sampling !== "object" || Array.isArray(sampling)) {
+      errors.push("sampling 必须是对象");
+      return { valid: false, errors, sampling };
+    }
+
+    if (sampling.sampleNo !== undefined && typeof sampling.sampleNo !== "string") {
+      errors.push("sampling.sampleNo 必须是字符串");
+    }
+
+    if (sampling.sampleMethod !== undefined && typeof sampling.sampleMethod !== "string") {
+      errors.push("sampling.sampleMethod 必须是字符串");
+    }
+
+    if (sampling.sampler !== undefined && typeof sampling.sampler !== "string") {
+      errors.push("sampling.sampler 必须是字符串");
+    }
+
+    if (sampling.sampleTime !== undefined && typeof sampling.sampleTime !== "string") {
+      errors.push("sampling.sampleTime 必须是字符串");
+    }
+
+    return { valid: errors.length === 0, errors, sampling };
+  }
+
   function validateReview(review, index) {
     const errors = [];
 
@@ -101,8 +132,18 @@ const Validation = (() => {
       }
     }
 
+    if (mark.sampling !== undefined) {
+      const samplingResult = validateSampling(mark.sampling, index);
+      if (!samplingResult.valid) {
+        errors.push(...samplingResult.errors.map((e) => `采样信息: ${e}`));
+      }
+    }
+
     if (DataIO && typeof DataIO.ensureReviewData === "function") {
       mark = DataIO.ensureReviewData(mark);
+    }
+    if (DataIO && typeof DataIO.ensureSamplingData === "function") {
+      mark = DataIO.ensureSamplingData(mark);
     }
 
     return { valid: errors.length === 0, errors, mark };
@@ -851,6 +892,7 @@ const Validation = (() => {
     validateMark,
     validateMarkArray,
     validateReview,
+    validateSampling,
     validateDive,
     validateDiveArray,
     validateMeasurement,
