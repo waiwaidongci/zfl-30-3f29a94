@@ -8,9 +8,11 @@ const App = (() => {
   let currentEditId = null;
   let currentEditMeasureId = null;
   let importErrors = [];
+  let currentProject = null;
 
   function setImportErrors(errors) {
     importErrors = errors || [];
+    DataIO.saveImportErrors(importErrors);
     if (callbacks && callbacks.onImportErrorsUpdate) {
       callbacks.onImportErrorsUpdate(importErrors);
     }
@@ -115,14 +117,18 @@ const App = (() => {
     }
   }
 
-  function init() {
+  function loadProjectData() {
+    DataIO.setProjectId(currentProject.id);
     marks = DataIO.loadMarks();
     dives = DataIO.loadDives();
     measurements = DataIO.loadMeasurements();
     scale = DataIO.loadScale();
+    importErrors = DataIO.loadImportErrors();
     const savedGridConfig = DataIO.loadGridConfig();
     if (savedGridConfig) {
       gridConfig = savedGridConfig;
+    } else {
+      gridConfig = { enabled: false, size: 1, showLabels: true };
     }
 
     if (!dives.length && !marks.length) {
@@ -132,10 +138,12 @@ const App = (() => {
       saveDives();
     } else if (!dives.length && marks.length) {
       autoCreateDivesFromMarks();
-    } else if (!marks.length) {
-      marks = getDefaultMarks();
-      save();
     }
+  }
+
+  function init() {
+    currentProject = ProjectManager.init();
+    loadProjectData();
 
     document.addEventListener('deleteMeasurement', (e) => {
       handleDeleteMeasurement(e.detail.id);
@@ -154,6 +162,12 @@ const App = (() => {
       onImport: handleImport,
       onImportCSV: handleImportCSV,
       onUpdateReviewStatus: handleUpdateReviewStatus,
+      onSwitchProject: handleSwitchProject,
+      onCreateProject: handleCreateProject,
+      onRenameProject: handleRenameProject,
+      onArchiveProject: handleArchiveProject,
+      onUnarchiveProject: handleUnarchiveProject,
+      onDeleteProject: handleDeleteProject,
     };
 
     UI.init({
@@ -166,9 +180,106 @@ const App = (() => {
       currentEditId,
       importErrors,
       callbacks,
+      currentProject,
     });
 
     UI.render();
+  }
+
+  function handleSwitchProject(projectId) {
+    if (currentProject && currentProject.id === projectId) return;
+    currentProject = ProjectManager.switchProject(projectId)
+      ? ProjectManager.getCurrentProject()
+      : currentProject;
+    if (!currentProject) return;
+
+    pending = null;
+    currentEditId = null;
+    currentEditMeasureId = null;
+    importErrors = [];
+
+    loadProjectData();
+
+    UI.resetAllState();
+    UI.init({
+      marks,
+      dives,
+      measurements,
+      scale,
+      gridConfig,
+      pending,
+      currentEditId,
+      importErrors,
+      callbacks,
+      currentProject,
+    });
+    UI.render();
+    UI.showToast("已切换到项目「" + currentProject.name + "」", "success");
+  }
+
+  function handleCreateProject(name) {
+    const project = ProjectManager.createProject(name);
+    handleSwitchProject(project.id);
+    return project;
+  }
+
+  function handleRenameProject(projectId, newName) {
+    const result = ProjectManager.renameProject(projectId, newName);
+    if (result) {
+      currentProject = ProjectManager.getCurrentProject();
+      UI.updateProjectSelector();
+      UI.showToast("项目已重命名", "success");
+    }
+    return result;
+  }
+
+  function handleArchiveProject(projectId) {
+    const nextId = ProjectManager.archiveProject(projectId);
+    if (nextId && typeof nextId === "string") {
+      handleSwitchProject(nextId);
+    } else if (nextId === null && currentProject && currentProject.id === projectId) {
+      currentProject = ProjectManager.getCurrentProject();
+      UI.updateProjectSelector();
+      UI.showToast("项目已归档", "success");
+    }
+    return nextId;
+  }
+
+  function handleUnarchiveProject(projectId) {
+    const result = ProjectManager.unarchiveProject(projectId);
+    if (result) {
+      UI.updateProjectSelector();
+      UI.showToast("项目已恢复", "success");
+    }
+    return result;
+  }
+
+  function handleDeleteProject(projectId) {
+    const nextId = ProjectManager.deleteProject(projectId);
+    if (nextId && typeof nextId === "string") {
+      handleSwitchProject(nextId);
+    } else if (nextId === null && currentProject && currentProject.id === projectId) {
+      currentProject = ProjectManager.getCurrentProject();
+      if (currentProject) {
+        loadProjectData();
+        UI.resetAllState();
+        UI.init({
+          marks,
+          dives,
+          measurements,
+          scale,
+          gridConfig,
+          pending,
+          currentEditId,
+          importErrors,
+          callbacks,
+          currentProject,
+        });
+        UI.render();
+      }
+      UI.showToast("项目已删除", "info");
+    }
+    return nextId;
   }
 
   function save() {
@@ -426,7 +537,9 @@ const App = (() => {
   }
 
   function handleExport() {
-    DataIO.exportFullData(marks, dives, measurements, scale, gridConfig);
+    const projectName = currentProject ? currentProject.name : "dive-records";
+    const safeName = projectName.replace(/[^\w\u4e00-\u9fff-]/g, "_");
+    DataIO.exportFullData(marks, dives, measurements, scale, gridConfig, safeName + ".json");
   }
 
   async function handleImport() {

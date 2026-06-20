@@ -26,6 +26,7 @@ const UI = (() => {
   let measurePoints = [];
   let selectedRelatedMarks = [];
   let importErrors = [];
+  let currentProject = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -104,6 +105,8 @@ const UI = (() => {
       heatmapLegendBar: document.querySelector("#heatmapLegendBar"),
       heatmapEmptyTip: document.querySelector("#heatmapEmptyTip"),
       reportBtn: document.querySelector("#reportBtn"),
+      projectSelect: document.querySelector("#projectSelect"),
+      manageProjectBtn: document.querySelector("#manageProjectBtn"),
     };
 
     marks = deps.marks;
@@ -114,6 +117,7 @@ const UI = (() => {
     pending = deps.pending;
     currentEditId = deps.currentEditId;
     importErrors = deps.importErrors || [];
+    currentProject = deps.currentProject || null;
 
     if (gridConfig.size) {
       elements.gridSize.value = gridConfig.size;
@@ -132,6 +136,7 @@ const UI = (() => {
 
     initRibs();
     bindEvents(callbacks);
+    updateProjectSelector();
     updateDiveSelect();
     updateDiveFilter();
     updateReviewDiveFilter();
@@ -286,6 +291,21 @@ const UI = (() => {
     if (elements.reportBtn) {
       elements.reportBtn.onclick = () => {
         showReportModal();
+      };
+    }
+
+    if (elements.projectSelect) {
+      elements.projectSelect.onchange = () => {
+        const projectId = elements.projectSelect.value;
+        if (projectId && callbacks.onSwitchProject) {
+          callbacks.onSwitchProject(projectId);
+        }
+      };
+    }
+
+    if (elements.manageProjectBtn) {
+      elements.manageProjectBtn.onclick = () => {
+        showProjectManagerModal();
       };
     }
 
@@ -2742,6 +2762,206 @@ const UI = (() => {
     `;
   }
 
+  function updateProjectSelector() {
+    if (!elements.projectSelect) return;
+    const projects = ProjectManager.getActiveProjects();
+    currentProject = ProjectManager.getCurrentProject();
+    const currentId = currentProject ? currentProject.id : null;
+
+    elements.projectSelect.innerHTML = projects.map((p) => {
+      return '<option value="' + p.id + '"' + (p.id === currentId ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>';
+    }).join("");
+  }
+
+  function resetAllState() {
+    pending = null;
+    currentEditId = null;
+    currentEditDiveId = null;
+    currentEditMeasureId = null;
+    currentAttachments = [];
+    activeTab = "marks";
+    isCalibrating = false;
+    calibratePoints = [];
+    isMeasuring = false;
+    measurePoints = [];
+    selectedRelatedMarks = [];
+    importErrors = [];
+
+    if (elements.form) elements.form.reset();
+    if (elements.diveForm) elements.diveForm.reset();
+    if (elements.measureForm) elements.measureForm.reset();
+
+    elements.tabs.forEach(tab => {
+      tab.classList.toggle("active", tab.dataset.tab === "marks");
+    });
+    elements.marksTab.classList.remove("hidden");
+    elements.reviewTab.classList.add("hidden");
+    elements.divesTab.classList.add("hidden");
+    elements.measureTab.classList.add("hidden");
+
+    elements.filter.value = "";
+    elements.diveFilter.value = "";
+    elements.reviewFilter.value = "";
+    elements.view.value = "list";
+  }
+
+  function showProjectManagerModal() {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-project";
+
+    renderProjectManagerContent(modal, backdrop);
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+      }
+    };
+  }
+
+  function renderProjectManagerContent(modal, backdrop) {
+    const allProjects = ProjectManager.getAllProjects();
+    const currentId = currentProject ? currentProject.id : null;
+
+    let html = '<h2>多遗址项目管理</h2>';
+
+    html += '<div class="project-create-row">';
+    html += '<input type="text" id="newProjectNameInput" placeholder="输入新遗址项目名称">';
+    html += '<button id="createProjectBtn">创建项目</button>';
+    html += '</div>';
+
+    html += '<div class="project-list">';
+    if (allProjects.length === 0) {
+      html += '<div class="muted">暂无项目</div>';
+    } else {
+      allProjects.forEach((p) => {
+        const isActive = p.id === currentId;
+        const isArchived = p.archived;
+        const usageBytes = ProjectManager.getProjectStorageUsage(p.id);
+        const usageKB = (usageBytes / 1024).toFixed(1);
+        const markCount = ProjectManager.loadProjectData(p.id, "marks").length;
+        const diveCount = ProjectManager.loadProjectData(p.id, "dives").length;
+
+        html += '<div class="project-card' + (isActive ? ' project-active' : '') + (isArchived ? ' project-archived' : '') + '">';
+        html += '<div class="project-card-header">';
+        html += '<div class="project-card-name">' + escapeHtml(p.name) + '</div>';
+        if (isActive) {
+          html += '<span class="pill pill-new">当前项目</span>';
+        }
+        if (isArchived) {
+          html += '<span class="pill pill-error">已归档</span>';
+        }
+        html += '</div>';
+        html += '<div class="project-card-info">';
+        html += '<span>' + markCount + ' 个标记</span>';
+        html += '<span>' + diveCount + ' 个潜次</span>';
+        html += '<span>' + usageKB + ' KB</span>';
+        html += '</div>';
+        html += '<div class="project-card-actions">';
+        if (!isActive) {
+          html += '<button class="project-switch-btn" data-id="' + p.id + '">切换</button>';
+        }
+        if (!isArchived) {
+          html += '<button class="secondary project-rename-btn" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">重命名</button>';
+          html += '<button class="secondary project-archive-btn" data-id="' + p.id + '">归档</button>';
+        } else {
+          html += '<button class="secondary project-unarchive-btn" data-id="' + p.id + '">恢复</button>';
+        }
+        if (!isActive && allProjects.length > 1) {
+          html += '<button class="danger project-delete-btn" data-id="' + p.id + '">删除</button>';
+        }
+        html += '</div>';
+        html += '</div>';
+      });
+    }
+    html += '</div>';
+
+    html += '<div class="project-list-footer muted">项目数据存储在浏览器本地，清除浏览器数据将导致数据丢失，请定期导出备份。</div>';
+
+    modal.innerHTML = html;
+
+    modal.querySelector("#createProjectBtn").onclick = () => {
+      const nameInput = modal.querySelector("#newProjectNameInput");
+      const name = nameInput.value.trim();
+      if (!name) {
+        showToast("请输入项目名称", "error");
+        return;
+      }
+      if (callbacks.onCreateProject) {
+        callbacks.onCreateProject(name);
+        renderProjectManagerContent(modal, backdrop);
+        updateProjectSelector();
+      }
+    };
+
+    modal.querySelectorAll(".project-switch-btn").forEach(btn => {
+      btn.onclick = () => {
+        const projectId = btn.dataset.id;
+        if (callbacks.onSwitchProject) {
+          callbacks.onSwitchProject(projectId);
+          renderProjectManagerContent(modal, backdrop);
+          updateProjectSelector();
+        }
+      };
+    });
+
+    modal.querySelectorAll(".project-rename-btn").forEach(btn => {
+      btn.onclick = () => {
+        const projectId = btn.dataset.id;
+        const oldName = btn.dataset.name;
+        const newName = prompt("请输入新名称", oldName);
+        if (newName && newName.trim() && newName.trim() !== oldName) {
+          if (callbacks.onRenameProject) {
+            callbacks.onRenameProject(projectId, newName.trim());
+            renderProjectManagerContent(modal, backdrop);
+          }
+        }
+      };
+    });
+
+    modal.querySelectorAll(".project-archive-btn").forEach(btn => {
+      btn.onclick = () => {
+        const projectId = btn.dataset.id;
+        if (confirm("确定要归档此项目吗？归档后可在项目管理中恢复。")) {
+          if (callbacks.onArchiveProject) {
+            callbacks.onArchiveProject(projectId);
+            renderProjectManagerContent(modal, backdrop);
+            updateProjectSelector();
+          }
+        }
+      };
+    });
+
+    modal.querySelectorAll(".project-unarchive-btn").forEach(btn => {
+      btn.onclick = () => {
+        const projectId = btn.dataset.id;
+        if (callbacks.onUnarchiveProject) {
+          callbacks.onUnarchiveProject(projectId);
+          renderProjectManagerContent(modal, backdrop);
+          updateProjectSelector();
+        }
+      };
+    });
+
+    modal.querySelectorAll(".project-delete-btn").forEach(btn => {
+      btn.onclick = () => {
+        const projectId = btn.dataset.id;
+        if (confirm("确定要删除此项目吗？此操作不可撤销，所有标记、潜次和测距数据将被永久删除。")) {
+          if (callbacks.onDeleteProject) {
+            callbacks.onDeleteProject(projectId);
+            renderProjectManagerContent(modal, backdrop);
+            updateProjectSelector();
+          }
+        }
+      };
+    });
+  }
+
   return {
     init,
     updateState,
@@ -2755,6 +2975,7 @@ const UI = (() => {
     resetForm,
     resetDiveForm,
     resetMeasureForm,
+    resetAllState,
     showImportPreview,
     showCSVFieldMappingPreview,
     showCSVImportPreview,
@@ -2764,6 +2985,7 @@ const UI = (() => {
     renderStorageInfo,
     getCurrentAttachments,
     showReportModal,
+    updateProjectSelector,
     typeNames,
     weatherNames,
     currentNames,

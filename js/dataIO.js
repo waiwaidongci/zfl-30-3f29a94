@@ -1,12 +1,30 @@
 const DataIO = (() => {
-  const MARKS_STORAGE_KEY = "zfl30Marks";
-  const DIVES_STORAGE_KEY = "zfl30Dives";
-  const MEASUREMENTS_STORAGE_KEY = "zfl30Measurements";
-  const SCALE_STORAGE_KEY = "zfl30Scale";
-  const GRID_STORAGE_KEY = "zfl30Grid";
+  const OLD_MARKS_STORAGE_KEY = "zfl30Marks";
+  const OLD_DIVES_STORAGE_KEY = "zfl30Dives";
+  const OLD_MEASUREMENTS_STORAGE_KEY = "zfl30Measurements";
+  const OLD_SCALE_STORAGE_KEY = "zfl30Scale";
+  const OLD_GRID_STORAGE_KEY = "zfl30Grid";
+  const OLD_IMPORT_ERRORS_STORAGE_KEY = "zfl30ImportErrors";
   const THUMBNAIL_MAX_SIZE = 200;
   const MAX_IMAGE_SIZE_MB = 5;
   const STORAGE_WARNING_THRESHOLD = 0.8;
+
+  let _projectId = null;
+
+  function setProjectId(projectId) {
+    _projectId = projectId;
+  }
+
+  function getProjectId() {
+    return _projectId;
+  }
+
+  function _marksKey() { return _projectId ? ProjectManager.projKey(_projectId, "marks") : OLD_MARKS_STORAGE_KEY; }
+  function _divesKey() { return _projectId ? ProjectManager.projKey(_projectId, "dives") : OLD_DIVES_STORAGE_KEY; }
+  function _measurementsKey() { return _projectId ? ProjectManager.projKey(_projectId, "measurements") : OLD_MEASUREMENTS_STORAGE_KEY; }
+  function _scaleKey() { return _projectId ? ProjectManager.projKey(_projectId, "scale") : OLD_SCALE_STORAGE_KEY; }
+  function _gridKey() { return _projectId ? ProjectManager.projKey(_projectId, "grid") : OLD_GRID_STORAGE_KEY; }
+  function _importErrorsKey() { return _projectId ? ProjectManager.projKey(_projectId, "importErrors") : OLD_IMPORT_ERRORS_STORAGE_KEY; }
 
   function getDefaultReview() {
     return {
@@ -49,7 +67,7 @@ const DataIO = (() => {
 
   function loadMarks() {
     try {
-      const raw = JSON.parse(localStorage.getItem(MARKS_STORAGE_KEY) || "[]");
+      const raw = JSON.parse(localStorage.getItem(_marksKey()) || "[]");
       return raw.map((m) => ensureReviewData(m));
     } catch (e) {
       console.error("Failed to load marks:", e);
@@ -58,12 +76,12 @@ const DataIO = (() => {
   }
 
   function saveMarks(marks) {
-    localStorage.setItem(MARKS_STORAGE_KEY, JSON.stringify(marks));
+    localStorage.setItem(_marksKey(), JSON.stringify(marks));
   }
 
   function loadDives() {
     try {
-      return JSON.parse(localStorage.getItem(DIVES_STORAGE_KEY) || "[]");
+      return JSON.parse(localStorage.getItem(_divesKey()) || "[]");
     } catch (e) {
       console.error("Failed to load dives:", e);
       return [];
@@ -71,12 +89,12 @@ const DataIO = (() => {
   }
 
   function saveDives(dives) {
-    localStorage.setItem(DIVES_STORAGE_KEY, JSON.stringify(dives));
+    localStorage.setItem(_divesKey(), JSON.stringify(dives));
   }
 
   function loadMeasurements() {
     try {
-      return JSON.parse(localStorage.getItem(MEASUREMENTS_STORAGE_KEY) || "[]");
+      return JSON.parse(localStorage.getItem(_measurementsKey()) || "[]");
     } catch (e) {
       console.error("Failed to load measurements:", e);
       return [];
@@ -84,12 +102,12 @@ const DataIO = (() => {
   }
 
   function saveMeasurements(measurements) {
-    localStorage.setItem(MEASUREMENTS_STORAGE_KEY, JSON.stringify(measurements));
+    localStorage.setItem(_measurementsKey(), JSON.stringify(measurements));
   }
 
   function loadScale() {
     try {
-      return JSON.parse(localStorage.getItem(SCALE_STORAGE_KEY) || "null");
+      return JSON.parse(localStorage.getItem(_scaleKey()) || "null");
     } catch (e) {
       console.error("Failed to load scale:", e);
       return null;
@@ -97,12 +115,12 @@ const DataIO = (() => {
   }
 
   function saveScale(scale) {
-    localStorage.setItem(SCALE_STORAGE_KEY, JSON.stringify(scale));
+    localStorage.setItem(_scaleKey(), JSON.stringify(scale));
   }
 
   function loadGridConfig() {
     try {
-      return JSON.parse(localStorage.getItem(GRID_STORAGE_KEY) || "null");
+      return JSON.parse(localStorage.getItem(_gridKey()) || "null");
     } catch (e) {
       console.error("Failed to load grid config:", e);
       return null;
@@ -110,7 +128,20 @@ const DataIO = (() => {
   }
 
   function saveGridConfig(config) {
-    localStorage.setItem(GRID_STORAGE_KEY, JSON.stringify(config));
+    localStorage.setItem(_gridKey(), JSON.stringify(config));
+  }
+
+  function loadImportErrors() {
+    try {
+      return JSON.parse(localStorage.getItem(_importErrorsKey()) || "[]");
+    } catch (e) {
+      console.error("Failed to load import errors:", e);
+      return [];
+    }
+  }
+
+  function saveImportErrors(errors) {
+    localStorage.setItem(_importErrorsKey(), JSON.stringify(errors || []));
   }
 
   function exportFullData(marks, dives, measurements, scale, gridConfig, filename = "dive-records.json") {
@@ -278,10 +309,10 @@ const DataIO = (() => {
 
   function getStorageUsage() {
     let totalSize = 0;
-    const keys = [MARKS_STORAGE_KEY, DIVES_STORAGE_KEY, MEASUREMENTS_STORAGE_KEY, SCALE_STORAGE_KEY, GRID_STORAGE_KEY];
+    const keyFn = [_marksKey, _divesKey, _measurementsKey, _scaleKey, _gridKey, _importErrorsKey];
 
-    keys.forEach((key) => {
-      const value = localStorage.getItem(key);
+    keyFn.forEach((fn) => {
+      const value = localStorage.getItem(fn());
       if (value) {
         totalSize += new Blob([value]).size;
       }
@@ -506,6 +537,8 @@ const DataIO = (() => {
   }
 
   return {
+    setProjectId,
+    getProjectId,
     loadMarks,
     saveMarks,
     loadDives,
@@ -516,6 +549,8 @@ const DataIO = (() => {
     saveScale,
     loadGridConfig,
     saveGridConfig,
+    loadImportErrors,
+    saveImportErrors,
     exportFullData,
     exportMarksOnly,
     readFileAsText,
