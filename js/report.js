@@ -274,7 +274,7 @@ const Report = (() => {
     if (data.highlightMarks.length > 0) {
       html += '<div class="report-section">';
       html += '<h2>重点标记（待复核 / 需返潜）</h2>';
-      html += '<table class="report-table"><thead><tr><th>编号</th><th>类型</th><th>潜次</th><th>深度</th><th>样品编号</th><th>状态</th><th>复核意见</th></tr></thead><tbody>';
+      html += '<table class="report-table"><thead><tr><th>编号</th><th>类型</th><th>潜次</th><th>深度</th><th>样品编号</th><th>采样方式</th><th>采样人</th><th>采样时间</th><th>状态</th><th>复核意见</th></tr></thead><tbody>';
       data.highlightMarks.forEach(m => {
         html += '<tr>';
         html += '<td>' + escapeHtml(m.code) + '</td>';
@@ -282,6 +282,9 @@ const Report = (() => {
         html += '<td>' + escapeHtml(m.dive) + '</td>';
         html += '<td>' + escapeHtml(m.depth) + '</td>';
         html += '<td>' + escapeHtml(m.sampling?.sampleNo || "—") + '</td>';
+        html += '<td>' + escapeHtml(m.sampling?.sampleMethod || "—") + '</td>';
+        html += '<td>' + escapeHtml(m.sampling?.sampler || "—") + '</td>';
+        html += '<td>' + escapeHtml(m.sampling?.sampleTime || "—") + '</td>';
         html += '<td><span class="pill pill-review pill-review-' + m.reviewStatusKey + '">' + escapeHtml(m.reviewStatus) + '</span></td>';
         html += '<td>' + escapeHtml(m.reviewComment || "—") + '</td>';
         html += '</tr>';
@@ -302,7 +305,7 @@ const Report = (() => {
         html += '<div class="report-dive-objective">' + escapeHtml(dive.objective) + '</div>';
 
         if (dive.marks.length > 0) {
-          html += '<table class="report-table"><thead><tr><th>编号</th><th>类型</th><th>深度</th><th>朝向</th><th>保存状态</th><th>样品编号</th><th>采样方式</th><th>采样人</th><th>审核状态</th></tr></thead><tbody>';
+          html += '<table class="report-table"><thead><tr><th>编号</th><th>类型</th><th>深度</th><th>朝向</th><th>保存状态</th><th>样品编号</th><th>采样方式</th><th>采样人</th><th>采样时间</th><th>审核状态</th></tr></thead><tbody>';
           dive.marks.forEach(m => {
             html += '<tr>';
             html += '<td>' + escapeHtml(m.code) + '</td>';
@@ -313,6 +316,7 @@ const Report = (() => {
             html += '<td>' + escapeHtml(m.sampling?.sampleNo || "—") + '</td>';
             html += '<td>' + escapeHtml(m.sampling?.sampleMethod || "—") + '</td>';
             html += '<td>' + escapeHtml(m.sampling?.sampler || "—") + '</td>';
+            html += '<td>' + escapeHtml(m.sampling?.sampleTime || "—") + '</td>';
             html += '<td><span class="pill pill-review pill-review-' + m.reviewStatusKey + '">' + escapeHtml(m.reviewStatus) + '</span></td>';
             html += '</tr>';
           });

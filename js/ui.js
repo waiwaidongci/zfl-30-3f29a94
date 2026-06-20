@@ -983,6 +983,20 @@ const UI = (() => {
           const sampleBadge = sampleNo 
             ? '<span class="pill pill-sampling" title="样品编号: ' + escapeHtml(sampleNo) + '">🧪 ' + escapeHtml(sampleNo) + '</span>' 
             : '';
+          
+          const sampling = m.sampling || {};
+          const hasSampling = sampling.sampleNo || sampling.sampleMethod || sampling.sampler || sampling.sampleTime;
+          let samplingInfo = '';
+          if (hasSampling) {
+            const parts = [];
+            if (sampling.sampleMethod) parts.push('方式: ' + escapeHtml(sampling.sampleMethod));
+            if (sampling.sampler) parts.push('采样人: ' + escapeHtml(sampling.sampler));
+            if (sampling.sampleTime) parts.push('时间: ' + escapeHtml(sampling.sampleTime));
+            if (parts.length > 0) {
+              samplingInfo = '<div class="sampling-info muted small">' + parts.join(' · ') + '</div>';
+            }
+          }
+          
           return '<div class="item ' +
             (m.id === currentEditId ? "active" : "") +
             '" data-id="' +
@@ -999,7 +1013,7 @@ const UI = (() => {
             (m.orientation || "") +
             "</div><div>" +
             (m.condition || "") +
-            "</div></div>";
+            "</div>" + samplingInfo + "</div>";
         }
       )
       .join("");
@@ -1366,17 +1380,14 @@ const UI = (() => {
     if (mark.note) html += '<div><span class="muted">备注</span><div>' + mark.note + '</div></div>';
     html += '</div>';
 
-    const hasSampling = mark.sampling && (mark.sampling.sampleNo || mark.sampling.sampleMethod || mark.sampling.sampler || mark.sampling.sampleTime);
-    if (hasSampling) {
-      html += '<div class="detail-section">';
-      html += '<h3>采样记录</h3>';
-      html += '<div class="detail-grid">';
-      if (mark.sampling.sampleNo) html += '<div><span class="muted">样品编号</span><div>' + escapeHtml(mark.sampling.sampleNo) + '</div></div>';
-      if (mark.sampling.sampleMethod) html += '<div><span class="muted">采样方式</span><div>' + escapeHtml(mark.sampling.sampleMethod) + '</div></div>';
-      if (mark.sampling.sampler) html += '<div><span class="muted">采样人</span><div>' + escapeHtml(mark.sampling.sampler) + '</div></div>';
-      if (mark.sampling.sampleTime) html += '<div><span class="muted">采样时间</span><div>' + escapeHtml(mark.sampling.sampleTime) + '</div></div>';
-      html += '</div></div>';
-    }
+    html += '<div class="detail-section">';
+    html += '<h3>采样记录</h3>';
+    html += '<div class="detail-grid">';
+    html += '<div><span class="muted">样品编号</span><div>' + (mark.sampling?.sampleNo ? escapeHtml(mark.sampling.sampleNo) : '<span class="muted">—</span>') + '</div></div>';
+    html += '<div><span class="muted">采样方式</span><div>' + (mark.sampling?.sampleMethod ? escapeHtml(mark.sampling.sampleMethod) : '<span class="muted">—</span>') + '</div></div>';
+    html += '<div><span class="muted">采样人</span><div>' + (mark.sampling?.sampler ? escapeHtml(mark.sampling.sampler) : '<span class="muted">—</span>') + '</div></div>';
+    html += '<div><span class="muted">采样时间</span><div>' + (mark.sampling?.sampleTime ? escapeHtml(mark.sampling.sampleTime) : '<span class="muted">—</span>') + '</div></div>';
+    html += '</div></div>';
 
     html += '<div class="detail-section">';
     html += '<h3>复核意见</h3>';
@@ -1748,8 +1759,18 @@ const UI = (() => {
         markComparison.newMarks.forEach((mark) => {
           const sampleNo = mark.sampling?.sampleNo;
           const sampleBadge = sampleNo ? ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>' : '';
+          const sampling = mark.sampling || {};
+          const hasSamplingDetail = sampling.sampleMethod || sampling.sampler || sampling.sampleTime;
+          let samplingDetail = '';
+          if (hasSamplingDetail) {
+            const parts = [];
+            if (sampling.sampleMethod) parts.push('方式: ' + escapeHtml(sampling.sampleMethod));
+            if (sampling.sampler) parts.push('采样人: ' + escapeHtml(sampling.sampler));
+            if (sampling.sampleTime) parts.push('时间: ' + escapeHtml(sampling.sampleTime));
+            samplingDetail = '<div class="preview-item-detail muted small">' + parts.join(' · ') + '</div>';
+          }
           html +=
-            '<div class="preview-item"><span><b>' +
+            '<div class="preview-item"><div><span><b>' +
             mark.code +
             "</b> " +
             typeNames[mark.type] +
@@ -1758,7 +1779,7 @@ const UI = (() => {
             " · " +
             mark.depth +
             sampleBadge +
-            "</span><span class='pill pill-new'>新增</span></div>";
+            "</span><span class='pill pill-new'>新增</span></div>" + samplingDetail + "</div>";
         });
         html += "</div>";
       }
@@ -1803,6 +1824,16 @@ const UI = (() => {
           }
           const sampleNo = conflict.imported.sampling?.sampleNo;
           const sampleBadge = sampleNo ? ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>' : '';
+          const sampling = conflict.imported.sampling || {};
+          const hasSamplingDetail = sampling.sampleMethod || sampling.sampler || sampling.sampleTime;
+          let samplingDetail = '';
+          if (hasSamplingDetail) {
+            const parts = [];
+            if (sampling.sampleMethod) parts.push('方式: ' + escapeHtml(sampling.sampleMethod));
+            if (sampling.sampler) parts.push('采样人: ' + escapeHtml(sampling.sampler));
+            if (sampling.sampleTime) parts.push('时间: ' + escapeHtml(sampling.sampleTime));
+            samplingDetail = '<div class="preview-item-detail muted small">' + parts.join(' · ') + '</div>';
+          }
           html +=
             '<div class="preview-item preview-item-conflict" data-mark-conflict-index="' +
             idx + '"><div class="preview-item-main"><span><b>' +
@@ -1817,7 +1848,7 @@ const UI = (() => {
           html += '<option value="keep">保留本地</option>';
           html += '<option value="overwrite">覆盖本地</option>';
           html += '<option value="saveas">另存为新编号</option>';
-          html += "</select></div>" + reviewDiffHtml + "</div>";
+          html += "</select></div>" + samplingDetail + reviewDiffHtml + "</div>";
         });
         html += "</div>";
       }
@@ -2277,6 +2308,15 @@ const UI = (() => {
           }
           if (item.note) {
             noteHtml = '<div class="merge-item-note">⚠️ ' + escapeHtml(item.note) + "</div>";
+          }
+          const sampling = mark.sampling || {};
+          const hasSamplingDetail = sampling.sampleMethod || sampling.sampler || sampling.sampleTime;
+          if (hasSamplingDetail) {
+            const parts = [];
+            if (sampling.sampleMethod) parts.push('方式: ' + escapeHtml(sampling.sampleMethod));
+            if (sampling.sampler) parts.push('采样人: ' + escapeHtml(sampling.sampler));
+            if (sampling.sampleTime) parts.push('时间: ' + escapeHtml(sampling.sampleTime));
+            noteHtml = (noteHtml || '') + '<div class="merge-item-note merge-item-sampling">🧪 ' + parts.join(' · ') + '</div>';
           }
           if (item.diff) {
             diffHtml = renderDiff(item.diff);
@@ -2964,8 +3004,20 @@ const UI = (() => {
     if (markComparison.newMarks.length > 0) {
       html += '<div class="preview-list">';
       markComparison.newMarks.forEach((mark) => {
+        const sampleNo = mark.sampling?.sampleNo;
+        const sampleBadge = sampleNo ? ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>' : '';
+        const sampling = mark.sampling || {};
+        const hasSamplingDetail = sampling.sampleMethod || sampling.sampler || sampling.sampleTime;
+        let samplingDetail = '';
+        if (hasSamplingDetail) {
+          const parts = [];
+          if (sampling.sampleMethod) parts.push('方式: ' + escapeHtml(sampling.sampleMethod));
+          if (sampling.sampler) parts.push('采样人: ' + escapeHtml(sampling.sampler));
+          if (sampling.sampleTime) parts.push('时间: ' + escapeHtml(sampling.sampleTime));
+          samplingDetail = '<div class="preview-item-detail muted small">' + parts.join(' · ') + '</div>';
+        }
         html +=
-          '<div class="preview-item"><span><b>' +
+          '<div class="preview-item"><div><span><b>' +
           escapeHtml(mark.code) +
           "</b> " +
           escapeHtml(typeNames[mark.type] || mark.type) +
@@ -2973,7 +3025,8 @@ const UI = (() => {
           escapeHtml(mark.dive) +
           " · " +
           escapeHtml(mark.depth) +
-          "</span><span class='pill pill-new'>新增</span></div>";
+          sampleBadge +
+          "</span><span class='pill pill-new'>新增</span></div>" + samplingDetail + "</div>";
       });
       html += "</div>";
     }
@@ -3040,6 +3093,18 @@ const UI = (() => {
           }
           reviewDiffHtml += "</div>";
         }
+        const sampleNo = conflict.imported.sampling?.sampleNo;
+        const sampleBadge = sampleNo ? ' <span class="pill pill-sampling small">🧪 ' + escapeHtml(sampleNo) + '</span>' : '';
+        const sampling = conflict.imported.sampling || {};
+        const hasSamplingDetail = sampling.sampleMethod || sampling.sampler || sampling.sampleTime;
+        let samplingDetail = '';
+        if (hasSamplingDetail) {
+          const parts = [];
+          if (sampling.sampleMethod) parts.push('方式: ' + escapeHtml(sampling.sampleMethod));
+          if (sampling.sampler) parts.push('采样人: ' + escapeHtml(sampling.sampler));
+          if (sampling.sampleTime) parts.push('时间: ' + escapeHtml(sampling.sampleTime));
+          samplingDetail = '<div class="preview-item-detail muted small">' + parts.join(' · ') + '</div>';
+        }
         html +=
           '<div class="preview-item preview-item-conflict" data-mark-conflict-csv-index="' +
           idx +
@@ -3049,12 +3114,13 @@ const UI = (() => {
           escapeHtml(typeNames[conflict.imported.type] || conflict.imported.type) +
           ' · ' +
           escapeHtml(conflict.imported.dive) +
+          sampleBadge +
           "</span>";
         html += '<select data-mark-csv-resolution-index="' + idx + '">';
         html += '<option value="keep">保留本地</option>';
         html += '<option value="overwrite">覆盖本地</option>';
         html += '<option value="saveas">另存为新编号</option>';
-        html += "</select></div>" + reviewDiffHtml + "</div>";
+        html += "</select></div>" + samplingDetail + reviewDiffHtml + "</div>";
       });
       html += "</div>";
     }
