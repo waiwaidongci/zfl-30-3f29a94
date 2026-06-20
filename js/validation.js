@@ -830,6 +830,196 @@ const Validation = (() => {
     };
   }
 
+  function validateCSVDives(dives, headers, mapping) {
+    const results = [];
+    const codeCounts = new Map();
+
+    const requiredFields = ["code", "date", "leader", "visibility", "objective"];
+    const unmappedRequired = requiredFields.filter((f) => !mapping[f]);
+
+    dives.forEach((dive, index) => {
+      const errors = [];
+      const warnings = [];
+
+      if (unmappedRequired.length > 0) {
+        errors.push(
+          "缺少必要列映射: " +
+            unmappedRequired
+              .map((f) => {
+                const names = {
+                  code: "编号",
+                  date: "日期",
+                  leader: "负责人",
+                  visibility: "能见度",
+                  objective: "任务目标",
+                };
+                return names[f] || f;
+              })
+              .join("、")
+        );
+      }
+
+      const isEmpty = !dive.code && !dive.date && !dive.leader && !dive.visibility && !dive.objective;
+      if (isEmpty) {
+        errors.push("空行，已跳过");
+      } else {
+        if (!dive.code || !dive.code.trim()) {
+          errors.push("缺少编号");
+        } else {
+          const count = codeCounts.get(dive.code) || 0;
+          codeCounts.set(dive.code, count + 1);
+        }
+
+        if (!dive.date || !dive.date.trim()) {
+          errors.push("缺少日期");
+        } else {
+          const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+          if (!datePattern.test(dive.date)) {
+            errors.push(`日期格式无效: ${dive.date}，应为 YYYY-MM-DD 格式`);
+          }
+        }
+
+        if (!dive.leader || !dive.leader.trim()) {
+          errors.push("缺少负责人");
+        }
+
+        if (!dive.visibility || !dive.visibility.trim()) {
+          errors.push("缺少能见度");
+        }
+
+        if (!dive.objective || !dive.objective.trim()) {
+          errors.push("缺少任务目标");
+        }
+
+        if (dive.weather && !VALID_WEATHER.includes(dive.weather)) {
+          errors.push(`无效的天气: ${dive.weather}`);
+        }
+
+        if (dive.current && !VALID_CURRENT.includes(dive.current)) {
+          errors.push(`无效的水流: ${dive.current}`);
+        }
+      }
+
+      results.push({
+        index,
+        lineNumber: dive._csvLineNumber,
+        dive,
+        rawRow: dive._rawRow,
+        errors,
+        warnings,
+        valid: errors.length === 0,
+      });
+    });
+
+    results.forEach((result) => {
+      if (result.dive.code && codeCounts.get(result.dive.code) > 1) {
+        result.errors.push(`编号重复: ${result.dive.code} (CSV文件内出现 ${codeCounts.get(result.dive.code)} 次)`);
+        result.valid = false;
+      }
+    });
+
+    return {
+      results,
+      valid: results.every((r) => r.valid),
+      summary: {
+        total: results.length,
+        valid: results.filter((r) => r.valid).length,
+        invalid: results.filter((r) => !r.valid).length,
+        empty: results.filter((r) => r.errors.includes("空行，已跳过")).length,
+      },
+    };
+  }
+
+  function validateCSVMeasurements(measurements, headers, mapping) {
+    const results = [];
+    const codeCounts = new Map();
+
+    const requiredFields = ["code", "dive", "length"];
+    const unmappedRequired = requiredFields.filter((f) => !mapping[f]);
+
+    measurements.forEach((measurement, index) => {
+      const errors = [];
+      const warnings = [];
+
+      if (unmappedRequired.length > 0) {
+        errors.push(
+          "缺少必要列映射: " +
+            unmappedRequired
+              .map((f) => {
+                const names = {
+                  code: "编号",
+                  dive: "潜次",
+                  length: "长度",
+                };
+                return names[f] || f;
+              })
+              .join("、")
+        );
+      }
+
+      const isEmpty = !measurement.code && !measurement.dive && !measurement.length && (!measurement.points || measurement.points.length === 0);
+      if (isEmpty) {
+        errors.push("空行，已跳过");
+      } else {
+        if (!measurement.code || !measurement.code.trim()) {
+          errors.push("缺少编号");
+        } else {
+          const count = codeCounts.get(measurement.code) || 0;
+          codeCounts.set(measurement.code, count + 1);
+        }
+
+        if (!measurement.dive || !measurement.dive.trim()) {
+          errors.push("缺少潜次");
+        }
+
+        if (!measurement.length || measurement.length <= 0) {
+          errors.push("长度必须是大于0的数字");
+        }
+
+        if (!measurement.points || measurement.points.length < 2) {
+          errors.push("至少需要2个坐标点");
+        } else {
+          measurement.points.forEach((point, pIndex) => {
+            if (point.x === undefined || point.x < 0 || point.x > 100) {
+              errors.push(`第 ${pIndex + 1} 个点的 x 坐标必须是 0-100 之间的数字`);
+            }
+            if (point.y === undefined || point.y < 0 || point.y > 100) {
+              errors.push(`第 ${pIndex + 1} 个点的 y 坐标必须是 0-100 之间的数字`);
+            }
+          });
+        }
+      }
+
+      results.push({
+        index,
+        lineNumber: measurement._csvLineNumber,
+        measurement,
+        rawRow: measurement._rawRow,
+        errors,
+        warnings,
+        valid: errors.length === 0,
+      });
+    });
+
+    results.forEach((result) => {
+      if (result.measurement.code && codeCounts.get(result.measurement.code) > 1) {
+        result.errors.push(`编号重复: ${result.measurement.code} (CSV文件内出现 ${codeCounts.get(result.measurement.code)} 次)`);
+        result.valid = false;
+      }
+    });
+
+    return {
+      results,
+      valid: results.every((r) => r.valid),
+      summary: {
+        total: results.length,
+        valid: results.filter((r) => r.valid).length,
+        invalid: results.filter((r) => !r.valid).length,
+        empty: results.filter((r) => r.errors.includes("空行，已跳过")).length,
+      },
+    };
+  }
+
   function compareCSVMarks(localMarks, csvParseResult) {
     const { marks, headers, mapping } = csvParseResult;
     const validation = validateCSVMarks(marks, headers, mapping);
@@ -872,6 +1062,7 @@ const Validation = (() => {
 
     return {
       isCSV: true,
+      dataType: "marks",
       headers,
       mapping,
       newMarks,
@@ -882,6 +1073,122 @@ const Validation = (() => {
       summary: {
         total: marks.length,
         new: newMarks.length,
+        conflict: conflicts.length,
+        error: errors.length,
+      },
+    };
+  }
+
+  function compareCSVDives(localDives, csvParseResult) {
+    const { dives, headers, mapping } = csvParseResult;
+    const validation = validateCSVDives(dives, headers, mapping);
+    const localByCode = new Map(localDives.map((d) => [d.code, d]));
+
+    const validDives = validation.results
+      .filter((r) => r.valid)
+      .map((r) => {
+        const cleanDive = { ...r.dive };
+        delete cleanDive._csvLineNumber;
+        delete cleanDive._rawRow;
+        return cleanDive;
+      });
+
+    const newDives = [];
+    const conflicts = [];
+    const errors = validation.results
+      .filter((r) => !r.valid)
+      .map((r) => ({
+        index: r.index,
+        dive: r.dive,
+        errors: r.errors,
+        lineNumber: r.lineNumber,
+        rawRow: r.rawRow,
+      }));
+
+    validDives.forEach((dive) => {
+      const localDive = localByCode.get(dive.code);
+      if (localDive) {
+        conflicts.push({
+          local: localDive,
+          imported: dive,
+          resolution: "keep",
+        });
+      } else {
+        newDives.push(dive);
+      }
+    });
+
+    return {
+      isCSV: true,
+      dataType: "dives",
+      headers,
+      mapping,
+      newDives,
+      conflicts,
+      errors,
+      valid: true,
+      csvValidation: validation,
+      summary: {
+        total: dives.length,
+        new: newDives.length,
+        conflict: conflicts.length,
+        error: errors.length,
+      },
+    };
+  }
+
+  function compareCSVMeasurements(localMeasurements, csvParseResult) {
+    const { measurements, headers, mapping } = csvParseResult;
+    const validation = validateCSVMeasurements(measurements, headers, mapping);
+    const localByCode = new Map(localMeasurements.map((m) => [m.code, m]));
+
+    const validMeasurements = validation.results
+      .filter((r) => r.valid)
+      .map((r) => {
+        const cleanMeasurement = { ...r.measurement };
+        delete cleanMeasurement._csvLineNumber;
+        delete cleanMeasurement._rawRow;
+        return cleanMeasurement;
+      });
+
+    const newMeasurements = [];
+    const conflicts = [];
+    const errors = validation.results
+      .filter((r) => !r.valid)
+      .map((r) => ({
+        index: r.index,
+        measurement: r.measurement,
+        errors: r.errors,
+        lineNumber: r.lineNumber,
+        rawRow: r.rawRow,
+      }));
+
+    validMeasurements.forEach((measurement) => {
+      const localMeasurement = localByCode.get(measurement.code);
+      if (localMeasurement) {
+        conflicts.push({
+          local: localMeasurement,
+          imported: measurement,
+          resolution: "keep",
+        });
+      } else {
+        newMeasurements.push(measurement);
+      }
+    });
+
+    return {
+      isCSV: true,
+      dataType: "measurements",
+      headers,
+      mapping,
+      newMeasurements,
+      conflicts,
+      errors,
+      valid: true,
+      csvValidation: validation,
+      summary: {
+        total: measurements.length,
+        new: newMeasurements.length,
         conflict: conflicts.length,
         error: errors.length,
       },
@@ -913,7 +1220,11 @@ const Validation = (() => {
     generateNewCode,
     getReviewStatusDiff,
     validateCSVMarks,
+    validateCSVDives,
+    validateCSVMeasurements,
     compareCSVMarks,
+    compareCSVDives,
+    compareCSVMeasurements,
     VALID_TYPES,
     VALID_REVIEW_STATUSES,
     VALID_WEATHER,

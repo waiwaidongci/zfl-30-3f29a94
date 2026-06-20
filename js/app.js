@@ -1273,7 +1273,7 @@ const App = (() => {
     try {
       const file = await DataIO.triggerCSVInput();
       const text = await DataIO.readFileAsText(file);
-      const parsed = DataIO.parseCSVToMarks(text);
+      const parsed = DataIO.parseCSVToMultiType(text);
 
       if (!parsed.success) {
         UI.showToast("CSV 解析失败: " + parsed.error, "error");
@@ -1288,7 +1288,11 @@ const App = (() => {
       UI.showCSVFieldMappingPreview(
         parsed,
         (userMapping) => {
-          const remappedMarks = parsed.rows.map((row, idx) => {
+          const remappedMarks = [];
+          const remappedDives = [];
+          const remappedMeasurements = [];
+
+          parsed.rows.forEach((row, idx) => {
             const mapped = {};
             for (const [field, header] of Object.entries(userMapping)) {
               if (header && row[header] !== undefined) {
@@ -1296,43 +1300,155 @@ const App = (() => {
               }
             }
 
-            const mark = {
-              code: mapped.code ? mapped.code.trim() : "",
-              type: DataIO.mapType(mapped.type),
-              dive: mapped.dive ? mapped.dive.trim() : "",
-              depth: mapped.depth ? mapped.depth.trim() : "",
-              orientation: mapped.orientation ? mapped.orientation.trim() : "",
-              condition: mapped.condition ? mapped.condition.trim() : "",
-              note: mapped.note ? mapped.note.trim() : "",
-              sampling: {
-                sampleNo: mapped.sampleNo ? mapped.sampleNo.trim() : "",
-                sampleMethod: mapped.sampleMethod ? mapped.sampleMethod.trim() : "",
-                sampler: mapped.sampler ? mapped.sampler.trim() : "",
-                sampleTime: mapped.sampleTime ? mapped.sampleTime.trim() : "",
-              },
-            };
+            const lineNumber = idx + 2;
+            const dataType = mapped.dataType ? DataIO.mapDataType(mapped.dataType) : null;
 
-            if (mapped.x !== undefined) {
-              const x = DataIO.parseCoordinate(mapped.x);
-              if (x !== null) mark.x = x;
-            }
-            if (mapped.y !== undefined) {
-              const y = DataIO.parseCoordinate(mapped.y);
-              if (y !== null) mark.y = y;
+            let detectedType = dataType;
+            if (!detectedType) {
+              const hasDiveFields = mapped.date || mapped.leader || mapped.objective;
+              const hasMeasurementFields = mapped.length || mapped.x1 || mapped.x2 || mapped.points;
+              const hasMarkFields = mapped.type || mapped.depth || mapped.orientation || mapped.condition;
+
+              if (hasDiveFields && !hasMeasurementFields && !hasMarkFields) {
+                detectedType = "dive";
+              } else if (hasMeasurementFields && !hasDiveFields && !hasMarkFields) {
+                detectedType = "measurement";
+              } else {
+                detectedType = "mark";
+              }
             }
 
-            mark._csvLineNumber = idx + 2;
-            mark._rawRow = { ...row };
-            return mark;
+            if (detectedType === "dive") {
+              const participants = [];
+              if (mapped.participants && mapped.participants.trim()) {
+                const names = mapped.participants.split(/[;；,，]/).filter(n => n.trim());
+                names.forEach(name => {
+                  participants.push({
+                    name: name.trim(),
+                    role: "",
+                    equipment: "",
+                  });
+                });
+              }
+
+              const dive = {
+                code: mapped.code ? mapped.code.trim() : "",
+                date: mapped.date ? mapped.date.trim() : "",
+                leader: mapped.leader ? mapped.leader.trim() : "",
+                weather: DataIO.mapWeather(mapped.weather),
+                current: DataIO.mapCurrent(mapped.current),
+                visibility: mapped.visibility ? mapped.visibility.trim() : "",
+                objective: mapped.objective ? mapped.objective.trim() : "",
+                participants,
+                _csvLineNumber: lineNumber,
+                _rawRow: { ...row },
+              };
+              remappedDives.push(dive);
+            } else if (detectedType === "measurement") {
+              const points = [];
+
+              if (mapped.points && mapped.points.trim()) {
+                const coordPairs = mapped.points.split(/[;；]/).filter(p => p.trim());
+                coordPairs.forEach(pair => {
+                  const coords = pair.split(/[,，\s]+/).filter(c => c.trim());
+                  if (coords.length >= 2) {
+                    const x = DataIO.parseCoordinate(coords[0]);
+                    const y = DataIO.parseCoordinate(coords[1]);
+                    if (x !== null && y !== null) {
+                      points.push({ x, y });
+                    }
+                  }
+                });
+              }
+
+              if (points.length < 2) {
+                const x1 = DataIO.parseCoordinate(mapped.x1);
+                const y1 = DataIO.parseCoordinate(mapped.y1);
+                const x2 = DataIO.parseCoordinate(mapped.x2);
+                const y2 = DataIO.parseCoordinate(mapped.y2);
+                if (x1 !== null && y1 !== null) {
+                  points.push({ x: x1, y: y1 });
+                }
+                if (x2 !== null && y2 !== null) {
+                  points.push({ x: x2, y: y2 });
+                }
+              }
+
+              const relatedMarks = [];
+              if (mapped.relatedMarks && mapped.relatedMarks.trim()) {
+                const codes = mapped.relatedMarks.split(/[;；,，]/).filter(c => c.trim());
+                relatedMarks.push(...codes.map(c => c.trim()));
+              }
+
+              const length = mapped.length ? DataIO.parseCoordinate(mapped.length) : null;
+
+              const measurement = {
+                code: mapped.code ? mapped.code.trim() : "",
+                dive: mapped.dive ? mapped.dive.trim() : "",
+                length: length || 0,
+                points,
+                relatedMarks,
+                _csvLineNumber: lineNumber,
+                _rawRow: { ...row },
+              };
+              remappedMeasurements.push(measurement);
+            } else {
+              const mark = {
+                code: mapped.code ? mapped.code.trim() : "",
+                type: DataIO.mapType(mapped.type),
+                dive: mapped.dive ? mapped.dive.trim() : "",
+                depth: mapped.depth ? mapped.depth.trim() : "",
+                orientation: mapped.orientation ? mapped.orientation.trim() : "",
+                condition: mapped.condition ? mapped.condition.trim() : "",
+                note: mapped.note ? mapped.note.trim() : "",
+                sampling: {
+                  sampleNo: mapped.sampleNo ? mapped.sampleNo.trim() : "",
+                  sampleMethod: mapped.sampleMethod ? mapped.sampleMethod.trim() : "",
+                  sampler: mapped.sampler ? mapped.sampler.trim() : "",
+                  sampleTime: mapped.sampleTime ? mapped.sampleTime.trim() : "",
+                },
+              };
+
+              if (mapped.x !== undefined) {
+                const x = DataIO.parseCoordinate(mapped.x);
+                if (x !== null) mark.x = x;
+              }
+              if (mapped.y !== undefined) {
+                const y = DataIO.parseCoordinate(mapped.y);
+                if (y !== null) mark.y = y;
+              }
+
+              mark._csvLineNumber = lineNumber;
+              mark._rawRow = { ...row };
+              remappedMarks.push(mark);
+            }
           });
 
           const remappedParseResult = {
             ...parsed,
             mapping: userMapping,
             marks: remappedMarks,
+            dives: remappedDives,
+            measurements: remappedMeasurements,
           };
 
-          const comparison = Validation.compareCSVMarks(marks, remappedParseResult);
+          const markComparison = remappedMarks.length > 0
+            ? Validation.compareCSVMarks(marks, { ...remappedParseResult, marks: remappedMarks })
+            : null;
+
+          const diveComparison = remappedDives.length > 0
+            ? Validation.compareCSVDives(dives, { ...remappedParseResult, dives: remappedDives })
+            : null;
+
+          const measurementComparison = remappedMeasurements.length > 0
+            ? Validation.compareCSVMeasurements(measurements, { ...remappedParseResult, measurements: remappedMeasurements })
+            : null;
+
+          const comparison = {
+            marks: markComparison,
+            dives: diveComparison,
+            measurements: measurementComparison,
+          };
 
           UI.showCSVImportPreview(
             remappedParseResult,
@@ -1357,25 +1473,64 @@ const App = (() => {
   }
 
   function applyCSVImport(csvParseResult, comparison, resolutions) {
-    const { markResolutions } = resolutions;
+    const { markResolutions, diveResolutions, measurementResolutions } = resolutions;
+    const { marks: markComparison, dives: diveComparison, measurements: measurementComparison } = comparison;
 
     let updatedMarks = [...marks];
+    let updatedDives = [...dives];
+    let updatedMeasurements = [...measurements];
 
-    const { newMarks, conflicts, summary } = comparison;
+    if (markComparison) {
+      const { newMarks, conflicts } = markComparison;
 
-    if (conflicts.length > 0) {
-      updatedMarks = Validation.resolveMarkConflicts(
-        updatedMarks,
-        conflicts,
-        markResolutions || []
-      );
+      if (conflicts.length > 0) {
+        updatedMarks = Validation.resolveMarkConflicts(
+          updatedMarks,
+          conflicts,
+          markResolutions || []
+        );
+      }
+
+      if (newMarks.length > 0) {
+        updatedMarks = Validation.addNewMarks(updatedMarks, newMarks);
+      }
     }
 
-    if (newMarks.length > 0) {
-      updatedMarks = Validation.addNewMarks(updatedMarks, newMarks);
+    if (diveComparison) {
+      const { newDives, conflicts } = diveComparison;
+
+      if (conflicts.length > 0) {
+        updatedDives = Validation.resolveDiveConflicts(
+          updatedDives,
+          conflicts,
+          diveResolutions || []
+        );
+      }
+
+      if (newDives.length > 0) {
+        updatedDives = Validation.addNewDives(updatedDives, newDives);
+      }
+    }
+
+    if (measurementComparison) {
+      const { newMeasurements, conflicts } = measurementComparison;
+
+      if (conflicts.length > 0) {
+        updatedMeasurements = Validation.resolveMeasurementConflicts(
+          updatedMeasurements,
+          conflicts,
+          measurementResolutions || []
+        );
+      }
+
+      if (newMeasurements.length > 0) {
+        updatedMeasurements = Validation.addNewMeasurements(updatedMeasurements, newMeasurements);
+      }
     }
 
     marks = updatedMarks;
+    dives = updatedDives;
+    measurements = updatedMeasurements;
 
     autoCreateDivesFromMarks();
 
@@ -1386,22 +1541,43 @@ const App = (() => {
     saveGridConfig();
     UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
 
-    const markAdded = summary.new + (markResolutions?.filter((r) => r === "saveas").length || 0);
-    const markOverwritten = markResolutions?.filter((r) => r === "overwrite").length || 0;
-
     let message = "CSV导入完成：";
     let parts = [];
-    if (markAdded > 0) parts.push(`标记新增 ${markAdded} 项`);
-    if (markOverwritten > 0) parts.push(`标记覆盖 ${markOverwritten} 项`);
-    if (summary.error > 0) parts.push(`跳过 ${summary.error} 项错误`);
+
+    if (markComparison) {
+      const markSummary = markComparison.summary;
+      const markAdded = markSummary.new + (markResolutions?.filter((r) => r === "saveas").length || 0);
+      const markOverwritten = markResolutions?.filter((r) => r === "overwrite").length || 0;
+      if (markAdded > 0) parts.push(`标记新增 ${markAdded} 项`);
+      if (markOverwritten > 0) parts.push(`标记覆盖 ${markOverwritten} 项`);
+      if (markSummary.error > 0) parts.push(`标记跳过 ${markSummary.error} 项错误`);
+    }
+
+    if (diveComparison) {
+      const diveSummary = diveComparison.summary;
+      const diveAdded = diveSummary.new + (diveResolutions?.filter((r) => r === "saveas").length || 0);
+      const diveOverwritten = diveResolutions?.filter((r) => r === "overwrite").length || 0;
+      if (diveAdded > 0) parts.push(`潜次新增 ${diveAdded} 项`);
+      if (diveOverwritten > 0) parts.push(`潜次覆盖 ${diveOverwritten} 项`);
+      if (diveSummary.error > 0) parts.push(`潜次跳过 ${diveSummary.error} 项错误`);
+    }
+
+    if (measurementComparison) {
+      const measurementSummary = measurementComparison.summary;
+      const measureAdded = measurementSummary.new + (measurementResolutions?.filter((r) => r === "saveas").length || 0);
+      const measureOverwritten = measurementResolutions?.filter((r) => r === "overwrite").length || 0;
+      if (measureAdded > 0) parts.push(`测距新增 ${measureAdded} 项`);
+      if (measureOverwritten > 0) parts.push(`测距覆盖 ${measureOverwritten} 项`);
+      if (measurementSummary.error > 0) parts.push(`测距跳过 ${measurementSummary.error} 项错误`);
+    }
 
     UI.showToast(message + parts.join("，"), "success");
 
     const newImportErrors = [];
     const now = new Date().toISOString();
 
-    if (comparison.errors && comparison.errors.length > 0) {
-      comparison.errors.forEach((err) => {
+    if (markComparison && markComparison.errors && markComparison.errors.length > 0) {
+      markComparison.errors.forEach((err) => {
         newImportErrors.push({
           source: "csv",
           category: "marks",
@@ -1413,6 +1589,36 @@ const App = (() => {
         });
       });
     }
+
+    if (diveComparison && diveComparison.errors && diveComparison.errors.length > 0) {
+      diveComparison.errors.forEach((err) => {
+        newImportErrors.push({
+          source: "csv",
+          category: "dives",
+          importedAt: now,
+          index: err.index,
+          lineNumber: err.lineNumber,
+          code: err.dive?.code || null,
+          errors: err.errors || [],
+        });
+      });
+    }
+
+    if (measurementComparison && measurementComparison.errors && measurementComparison.errors.length > 0) {
+      measurementComparison.errors.forEach((err) => {
+        newImportErrors.push({
+          source: "csv",
+          category: "measurements",
+          importedAt: now,
+          index: err.index,
+          lineNumber: err.lineNumber,
+          code: err.measurement?.code || null,
+          errors: err.errors || [],
+        });
+      });
+    }
+
+    newImportErrors.sort((a, b) => (a.lineNumber || 0) - (b.lineNumber || 0));
 
     setImportErrors(newImportErrors);
   }

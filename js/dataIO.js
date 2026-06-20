@@ -468,6 +468,7 @@ const DataIO = (() => {
   }
 
   const CSV_COLUMN_MAPPINGS = {
+    dataType: ["数据类型", "类型标识", "dataType", "data_type", "recordType", "记录类型"],
     code: ["编号", "编号", "code", "id", "编号code", "标记编号", "标本编号"],
     type: ["类型", "类别", "type", "category", "种类", "文物类型"],
     dive: ["潜次", "潜次编号", "dive", "diveCode", "潜水批次", "潜次号"],
@@ -481,6 +482,20 @@ const DataIO = (() => {
     sampleMethod: ["采样方式", "采样方法", "sampleMethod", "sample_method", "采集方式"],
     sampler: ["采样人", "采集人", "sampler", "采样员"],
     sampleTime: ["采样时间", "采集时间", "sampleTime", "sample_time", "采样日期"],
+    date: ["日期", "潜次日期", "date", "潜水日期", "任务日期"],
+    leader: ["负责人", "领队", "leader", "潜次负责人", "指挥"],
+    weather: ["天气", "weather", "气象", "天气状况"],
+    current: ["水流", "海流", "current", "水流状况"],
+    visibility: ["能见度", "visibility", "可见度", "水下能见度"],
+    objective: ["任务目标", "目标", "objective", "潜水目标", "任务目的"],
+    participants: ["参与人员", "队员", "participants", "参与人", "团队成员"],
+    length: ["长度", "距离", "length", "测距长度", "测量长度"],
+    x1: ["x1", "起点x", "x起点", "point1x", "p1x", "X1"],
+    y1: ["y1", "起点y", "y起点", "point1y", "p1y", "Y1"],
+    x2: ["x2", "终点x", "x终点", "point2x", "p2x", "X2"],
+    y2: ["y2", "终点y", "y终点", "point2y", "p2y", "Y2"],
+    points: ["坐标点", "points", "点序列", "测量点", "坐标序列"],
+    relatedMarks: ["关联标记", "relatedMarks", "关联编号", "相关标记"],
   };
 
   const TYPE_NAME_MAPPINGS = {
@@ -501,6 +516,54 @@ const DataIO = (() => {
     "未知": "unknown",
     "其他": "unknown",
     "unknown": "unknown",
+  };
+
+  const DATA_TYPE_MAPPINGS = {
+    "mark": "mark",
+    "标记": "mark",
+    "marker": "mark",
+    "标本": "mark",
+    "dive": "dive",
+    "潜次": "dive",
+    "潜水": "dive",
+    "潜次档案": "dive",
+    "measurement": "measurement",
+    "测距": "measurement",
+    "测量": "measurement",
+    "测距记录": "measurement",
+  };
+
+  const WEATHER_MAPPINGS = {
+    "晴": "sunny",
+    "晴天": "sunny",
+    "sunny": "sunny",
+    "多云": "cloudy",
+    "阴天": "cloudy",
+    "cloudy": "cloudy",
+    "雨": "rainy",
+    "下雨": "rainy",
+    "rainy": "rainy",
+    "大风": "windy",
+    "有风": "windy",
+    "windy": "windy",
+    "雾": "foggy",
+    "有雾": "foggy",
+    "foggy": "foggy",
+  };
+
+  const CURRENT_MAPPINGS = {
+    "无流": "calm",
+    "静流": "calm",
+    "calm": "calm",
+    "弱流": "weak",
+    "缓流": "weak",
+    "weak": "weak",
+    "中流": "moderate",
+    "中等": "moderate",
+    "moderate": "moderate",
+    "强流": "strong",
+    "急流": "strong",
+    "strong": "strong",
   };
 
   function parseCSVLine(line) {
@@ -591,6 +654,39 @@ const DataIO = (() => {
     return rawType.trim();
   }
 
+  function mapDataType(rawType) {
+    if (!rawType) return "mark";
+    const cleaned = rawType.trim().toLowerCase();
+    for (const [name, value] of Object.entries(DATA_TYPE_MAPPINGS)) {
+      if (name.toLowerCase() === cleaned) {
+        return value;
+      }
+    }
+    return "mark";
+  }
+
+  function mapWeather(rawWeather) {
+    if (!rawWeather) return "sunny";
+    const cleaned = rawWeather.trim().toLowerCase();
+    for (const [name, value] of Object.entries(WEATHER_MAPPINGS)) {
+      if (name.toLowerCase() === cleaned) {
+        return value;
+      }
+    }
+    return rawWeather.trim();
+  }
+
+  function mapCurrent(rawCurrent) {
+    if (!rawCurrent) return "calm";
+    const cleaned = rawCurrent.trim().toLowerCase();
+    for (const [name, value] of Object.entries(CURRENT_MAPPINGS)) {
+      if (name.toLowerCase() === cleaned) {
+        return value;
+      }
+    }
+    return rawCurrent.trim();
+  }
+
   function parseCoordinate(raw) {
     if (!raw || raw.trim() === "") return null;
     const num = Number(raw);
@@ -640,16 +736,130 @@ const DataIO = (() => {
     return mark;
   }
 
-  function parseCSVToMarks(text) {
+  function convertCSVRowToDive(rawRow, mapping, lineNumber) {
+    const mapped = applyColumnMapping(rawRow, mapping);
+    const participants = [];
+    if (mapped.participants && mapped.participants.trim()) {
+      const names = mapped.participants.split(/[;；,，]/).filter(n => n.trim());
+      names.forEach(name => {
+        participants.push({
+          name: name.trim(),
+          role: "",
+          equipment: "",
+        });
+      });
+    }
+
+    const dive = {
+      code: mapped.code ? mapped.code.trim() : "",
+      date: mapped.date ? mapped.date.trim() : "",
+      leader: mapped.leader ? mapped.leader.trim() : "",
+      weather: mapWeather(mapped.weather),
+      current: mapCurrent(mapped.current),
+      visibility: mapped.visibility ? mapped.visibility.trim() : "",
+      objective: mapped.objective ? mapped.objective.trim() : "",
+      participants,
+    };
+
+    dive._csvLineNumber = lineNumber;
+    dive._rawRow = { ...rawRow };
+    return dive;
+  }
+
+  function convertCSVRowToMeasurement(rawRow, mapping, lineNumber) {
+    const mapped = applyColumnMapping(rawRow, mapping);
+    const points = [];
+
+    if (mapped.points && mapped.points.trim()) {
+      const coordPairs = mapped.points.split(/[;；]/).filter(p => p.trim());
+      coordPairs.forEach(pair => {
+        const coords = pair.split(/[,，\s]+/).filter(c => c.trim());
+        if (coords.length >= 2) {
+          const x = parseCoordinate(coords[0]);
+          const y = parseCoordinate(coords[1]);
+          if (x !== null && y !== null) {
+            points.push({ x, y });
+          }
+        }
+      });
+    }
+
+    if (points.length < 2) {
+      const x1 = parseCoordinate(mapped.x1);
+      const y1 = parseCoordinate(mapped.y1);
+      const x2 = parseCoordinate(mapped.x2);
+      const y2 = parseCoordinate(mapped.y2);
+      if (x1 !== null && y1 !== null) {
+        points.push({ x: x1, y: y1 });
+      }
+      if (x2 !== null && y2 !== null) {
+        points.push({ x: x2, y: y2 });
+      }
+    }
+
+    const relatedMarks = [];
+    if (mapped.relatedMarks && mapped.relatedMarks.trim()) {
+      const codes = mapped.relatedMarks.split(/[;；,，]/).filter(c => c.trim());
+      relatedMarks.push(...codes.map(c => c.trim()));
+    }
+
+    const length = mapped.length ? parseCoordinate(mapped.length) : null;
+
+    const measurement = {
+      code: mapped.code ? mapped.code.trim() : "",
+      dive: mapped.dive ? mapped.dive.trim() : "",
+      length: length || 0,
+      points,
+      relatedMarks,
+    };
+
+    measurement._csvLineNumber = lineNumber;
+    measurement._rawRow = { ...rawRow };
+    return measurement;
+  }
+
+  function detectRowDataType(rawRow, mapping) {
+    const mapped = applyColumnMapping(rawRow, mapping);
+    if (mapped.dataType) {
+      return mapDataType(mapped.dataType);
+    }
+
+    const hasDiveFields = mapped.date || mapped.leader || mapped.objective;
+    const hasMeasurementFields = mapped.length || mapped.x1 || mapped.x2 || mapped.points;
+    const hasMarkFields = mapped.type || mapped.depth || mapped.orientation || mapped.condition;
+
+    if (hasDiveFields && !hasMeasurementFields && !hasMarkFields) {
+      return "dive";
+    }
+    if (hasMeasurementFields && !hasDiveFields && !hasMarkFields) {
+      return "measurement";
+    }
+    return "mark";
+  }
+
+  function parseCSVToMultiType(text) {
     const parsed = parseCSV(text);
     if (!parsed.success) {
       return { success: false, error: parsed.error };
     }
 
     const mapping = detectColumnMapping(parsed.headers);
-    const marks = parsed.rows.map((row, idx) =>
-      convertCSVRowToMark(row, mapping, idx + 2)
-    );
+    const marks = [];
+    const dives = [];
+    const measurements = [];
+
+    parsed.rows.forEach((row, idx) => {
+      const lineNumber = idx + 2;
+      const dataType = detectRowDataType(row, mapping);
+
+      if (dataType === "dive") {
+        dives.push(convertCSVRowToDive(row, mapping, lineNumber));
+      } else if (dataType === "measurement") {
+        measurements.push(convertCSVRowToMeasurement(row, mapping, lineNumber));
+      } else {
+        marks.push(convertCSVRowToMark(row, mapping, lineNumber));
+      }
+    });
 
     return {
       success: true,
@@ -657,6 +867,19 @@ const DataIO = (() => {
       mapping,
       rows: parsed.rows,
       marks,
+      dives,
+      measurements,
+    };
+  }
+
+  function parseCSVToMarks(text) {
+    const parsed = parseCSVToMultiType(text);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error };
+    }
+    return {
+      ...parsed,
+      marks: parsed.marks,
     };
   }
 
@@ -715,11 +938,18 @@ const DataIO = (() => {
     STORAGE_WARNING_THRESHOLD,
     parseCSV,
     parseCSVToMarks,
+    parseCSVToMultiType,
     detectColumnMapping,
     mapType,
+    mapDataType,
+    mapWeather,
+    mapCurrent,
     parseCoordinate,
     triggerCSVInput,
     CSV_COLUMN_MAPPINGS,
     TYPE_NAME_MAPPINGS,
+    DATA_TYPE_MAPPINGS,
+    WEATHER_MAPPINGS,
+    CURRENT_MAPPINGS,
   };
 })();
