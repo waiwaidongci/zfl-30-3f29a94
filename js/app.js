@@ -11,6 +11,7 @@ const App = (() => {
   let importErrors = [];
   let currentProject = null;
   let views = [];
+  let revisitPlan = [];
 
   function setImportErrors(errors) {
     importErrors = errors || [];
@@ -155,6 +156,7 @@ const App = (() => {
     views = DataIO.loadViews();
     views = validateAndDegradeViews(views);
     saveViews();
+    revisitPlan = DataIO.loadRevisitPlan();
     const savedGridConfig = DataIO.loadGridConfig();
     if (savedGridConfig) {
       gridConfig = savedGridConfig;
@@ -213,6 +215,10 @@ const App = (() => {
       onDeleteView: handleDeleteView,
       onRenameView: handleRenameView,
       onGetViews: handleGetViews,
+      onGetRevisitTasks: aggregateRevisitTasks,
+      onSaveRevisitTask: handleSaveRevisitTask,
+      onDeleteRevisitTask: handleDeleteRevisitTask,
+      onCreateDiveFromRevisitPlan: handleCreateDiveFromRevisitPlan,
     };
 
     UI.init({
@@ -228,6 +234,7 @@ const App = (() => {
       callbacks,
       currentProject,
       views,
+      revisitPlan,
     });
 
     UI.render();
@@ -262,6 +269,7 @@ const App = (() => {
       callbacks,
       currentProject,
       views,
+      revisitPlan,
     });
     UI.render();
     UI.showToast("已切换到项目「" + currentProject.name + "」", "success");
@@ -329,6 +337,8 @@ const App = (() => {
           importErrors,
           callbacks,
           currentProject,
+          views,
+          revisitPlan,
         });
         UI.render();
       }
@@ -370,12 +380,16 @@ const App = (() => {
     DataIO.saveViews(views);
   }
 
+  function saveRevisitPlan() {
+    DataIO.saveRevisitPlan(revisitPlan);
+  }
+
   function validateAndDegradeViews(viewList) {
     if (!Array.isArray(viewList)) return [];
     const validDiveCodes = new Set(dives.map(d => d.code));
     const validTypes = new Set(["ceramic", "wood", "metal", "unknown"]);
     const validStatuses = new Set(["collected", "pending", "confirmed", "revisit"]);
-    const validTabs = new Set(["marks", "review", "dives", "measure"]);
+    const validTabs = new Set(["marks", "review", "revisit", "dives", "measure"]);
     const validViewModes = new Set(["list", "timeline"]);
 
     return viewList.map(view => {
@@ -635,6 +649,188 @@ const App = (() => {
     UI.showToast(`状态已变更为「${UI.reviewStatusNames[newStatus]}」`, "success");
   }
 
+  function parseDepthValue(depthStr) {
+    if (!depthStr) return 0;
+    const match = String(depthStr).match(/([\d.]+)/);
+    return match ? parseFloat(match[1]) : 0;
+  }
+
+  function getDepthRange(depthStr) {
+    const val = parseDepthValue(depthStr);
+    if (val <= 0) return "未知";
+    if (val < 10) return "0-10米";
+    if (val < 15) return "10-15米";
+    if (val < 20) return "15-20米";
+    if (val < 25) return "20-25米";
+    if (val < 30) return "25-30米";
+    return "30米以上";
+  }
+
+  function getLocationZone(x, y) {
+    if (x === undefined || y === undefined) return "未知区域";
+    const col = x < 33 ? "艉" : (x < 66 ? "中" : "艏");
+    const row = y < 33 ? "左舷" : (y < 66 ? "中部" : "右舷");
+    return row + col;
+  }
+
+  function aggregateRevisitTasks() {
+    const targetMarks = marks.filter(m => {
+      const status = m.review?.status || "collected";
+      return status === "pending" || status === "revisit";
+    });
+
+    const groups = new Map();
+
+    targetMarks.forEach(mark => {
+      const dive = mark.dive || "未知";
+      const type = mark.type || "unknown";
+      const depthRange = getDepthRange(mark.depth);
+      const locationZone = getLocationZone(mark.x, mark.y);
+      const key = `${dive}|${type}|${depthRange}|${locationZone}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: crypto.randomUUID(),
+          dive,
+          type,
+          depthRange,
+          locationZone,
+          markIds: [],
+          marks: [],
+          priority: "medium",
+          handlingMethod: "",
+          notes: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      const group = groups.get(key);
+      group.markIds.push(mark.id);
+      group.marks.push({
+        id: mark.id,
+        code: mark.code,
+        type: mark.type,
+        depth: mark.depth,
+        x: mark.x,
+        y: mark.y,
+        condition: mark.condition || "",
+        note: mark.note || "",
+        reviewStatus: mark.review?.status || "collected",
+        reviewComment: mark.review?.comment || "",
+      });
+    });
+
+    const result = [];
+    groups.forEach(group => {
+      const saved = revisitPlan.find(p => 
+        p.dive === group.dive && 
+        p.type === group.type && 
+        p.depthRange === group.depthRange && 
+        p.locationZone === group.locationZone
+      );
+      if (saved) {
+        result.push({
+          ...saved,
+          markIds: group.markIds,
+          marks: group.marks,
+        });
+      } else {
+        result.push(group);
+      }
+    });
+
+    result.sort((a, b) => {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      }
+      return (a.dive || "").localeCompare(b.dive || "");
+    });
+
+    return result;
+  }
+
+  function handleSaveRevisitTask(taskData) {
+    const existingIndex = revisitPlan.findIndex(t => t.id === taskData.id);
+    const now = new Date().toISOString();
+
+    if (existingIndex >= 0) {
+      revisitPlan[existingIndex] = {
+        ...revisitPlan[existingIndex],
+        ...taskData,
+        updatedAt: now,
+      };
+    } else {
+      revisitPlan.push({
+        id: taskData.id || crypto.randomUUID(),
+        ...taskData,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    saveRevisitPlan();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap, revisitPlan);
+    return true;
+  }
+
+  function handleDeleteRevisitTask(taskId) {
+    revisitPlan = revisitPlan.filter(t => t.id !== taskId);
+    saveRevisitPlan();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap, revisitPlan);
+  }
+
+  function handleCreateDiveFromRevisitPlan(taskIds) {
+    const tasks = aggregateRevisitTasks().filter(t => taskIds.includes(t.id));
+    if (tasks.length === 0) {
+      UI.showToast("请选择至少一个任务", "error");
+      return null;
+    }
+
+    const diveNum = dives.length + 1;
+    const diveCode = `DIVE-${String(diveNum).padStart(2, '0')}`;
+    const today = new Date().toISOString().split('T')[0];
+
+    const objectives = tasks.map(t => {
+      const typeName = UI.typeNames[t.type] || t.type;
+      const count = t.marks.length;
+      return `[${typeName}] ${t.depthRange} ${t.locationZone}（${count}个标记）`;
+    }).join("；");
+
+    const allMarks = tasks.flatMap(t => t.marks || []);
+    const totalMarks = allMarks.length;
+
+    const newDive = {
+      id: crypto.randomUUID(),
+      code: diveCode,
+      date: today,
+      leader: "",
+      weather: "sunny",
+      current: "weak",
+      visibility: "",
+      objective: `返潜任务：共${tasks.length}组任务，${totalMarks}个标记。${objectives}`,
+      participants: [],
+      revisitTasks: tasks.map(t => ({
+        taskId: t.id,
+        dive: t.dive,
+        type: t.type,
+        depthRange: t.depthRange,
+        locationZone: t.locationZone,
+        priority: t.priority,
+        handlingMethod: t.handlingMethod,
+        notes: t.notes,
+        markCount: t.marks.length,
+        markIds: t.markIds,
+      })),
+    };
+
+    dives.push(newDive);
+    saveDives();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap, revisitPlan);
+    UI.showToast(`已创建潜次「${diveCode}」，包含${tasks.length}组返潜任务`, "success");
+    return newDive;
+  }
+
   function handleDeleteMark(id) {
     const mark = marks.find((m) => m.id === id);
     if (mark) {
@@ -816,7 +1012,7 @@ const App = (() => {
   function handleExport() {
     const projectName = currentProject ? currentProject.name : "dive-records";
     const safeName = projectName.replace(/[^\w\u4e00-\u9fff-]/g, "_");
-    DataIO.exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, safeName + ".json");
+    DataIO.exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, revisitPlan, safeName + ".json");
   }
 
   function handleExportOfflineMerge() {
@@ -902,6 +1098,7 @@ const App = (() => {
           scale: parsed.data.scale,
           gridConfig: parsed.data.gridConfig,
           baseMap: parsed.data.baseMap,
+          revisitPlan: parsed.data.revisitPlan || [],
         };
       } else if (isFullFormatV6) {
         const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
@@ -1266,6 +1463,10 @@ const App = (() => {
       }
     }
 
+    if (comparison.revisitPlan && Array.isArray(comparison.revisitPlan)) {
+      revisitPlan = comparison.revisitPlan;
+    }
+
     marks = updatedMarks;
     dives = updatedDives;
     measurements = updatedMeasurements;
@@ -1278,7 +1479,8 @@ const App = (() => {
     saveScale();
     saveGridConfig();
     saveBaseMap();
-    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap);
+    saveRevisitPlan();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap, revisitPlan);
 
     const markSummary = comparison.marks?.summary;
     const diveSummary = comparison.dives?.summary;

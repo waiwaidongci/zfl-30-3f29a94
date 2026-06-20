@@ -3,20 +3,120 @@ const Report = (() => {
   const weatherNames = { sunny: "晴", cloudy: "多云", rainy: "雨", windy: "大风", foggy: "雾" };
   const currentNames = { calm: "无流", weak: "弱流", moderate: "中流", strong: "强流" };
   const reviewStatusNames = { collected: "采集", pending: "待复核", confirmed: "已确认", revisit: "需返潜" };
+  const priorityNames = { high: "高", medium: "中", low: "低" };
+
+  function parseDepthValue(depthStr) {
+    if (!depthStr) return 0;
+    const match = String(depthStr).match(/([\d.]+)/);
+    return match ? parseFloat(match[1]) : 0;
+  }
+
+  function getDepthRange(depthStr) {
+    const val = parseDepthValue(depthStr);
+    if (val <= 0) return "未知";
+    if (val < 10) return "0-10米";
+    if (val < 15) return "10-15米";
+    if (val < 20) return "15-20米";
+    if (val < 25) return "20-25米";
+    if (val < 30) return "25-30米";
+    return "30米以上";
+  }
+
+  function getLocationZone(x, y) {
+    if (x === undefined || y === undefined) return "未知区域";
+    const col = x < 33 ? "艉" : (x < 66 ? "中" : "艏");
+    const row = y < 33 ? "左舷" : (y < 66 ? "中部" : "右舷");
+    return row + col;
+  }
+
+  function aggregateRevisitTasks(marks, revisitPlan) {
+    const targetMarks = marks.filter(m => {
+      const status = m.review?.status || "collected";
+      return status === "pending" || status === "revisit";
+    });
+
+    const groups = new Map();
+
+    targetMarks.forEach(mark => {
+      const dive = mark.dive || "未知";
+      const type = mark.type || "unknown";
+      const depthRange = getDepthRange(mark.depth);
+      const locationZone = getLocationZone(mark.x, mark.y);
+      const key = `${dive}|${type}|${depthRange}|${locationZone}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          dive,
+          type,
+          depthRange,
+          locationZone,
+          markIds: [],
+          marks: [],
+          priority: "medium",
+          handlingMethod: "",
+          notes: "",
+        });
+      }
+      const group = groups.get(key);
+      group.markIds.push(mark.id);
+      group.marks.push({
+        id: mark.id,
+        code: mark.code,
+        type: mark.type,
+        depth: mark.depth,
+        condition: mark.condition || "",
+        note: mark.note || "",
+        reviewStatus: mark.review?.status || "collected",
+        reviewComment: mark.review?.comment || "",
+      });
+    });
+
+    const result = [];
+    groups.forEach(group => {
+      const saved = (revisitPlan || []).find(p =>
+        p.dive === group.dive &&
+        p.type === group.type &&
+        p.depthRange === group.depthRange &&
+        p.locationZone === group.locationZone
+      );
+      if (saved) {
+        result.push({
+          ...group,
+          priority: saved.priority || "medium",
+          handlingMethod: saved.handlingMethod || "",
+          notes: saved.notes || "",
+        });
+      } else {
+        result.push(group);
+      }
+    });
+
+    result.sort((a, b) => {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      }
+      return (a.dive || "").localeCompare(b.dive || "");
+    });
+
+    return result;
+  }
 
   function aggregate(options) {
-    const { marks, dives, measurements, scale, gridConfig, importErrors, baseMap } = options;
+    const { marks, dives, measurements, scale, gridConfig, importErrors, baseMap, revisitPlan } = options;
     const scope = options.scope || "all";
     const scopeDive = options.scopeDive || "";
 
     let filteredMarks = marks;
     let filteredDives = dives;
     let filteredMeasurements = measurements || [];
+    let revisitTasks = aggregateRevisitTasks(marks, revisitPlan || []);
 
     if (scope === "dive" && scopeDive) {
       filteredMarks = marks.filter(m => m.dive === scopeDive);
       filteredDives = dives.filter(d => d.code === scopeDive);
       filteredMeasurements = (measurements || []).filter(m => m.dive === scopeDive);
+      revisitTasks = revisitTasks.filter(t => t.dive === scopeDive);
     } else if (scope === "type" && options.scopeType) {
       filteredMarks = marks.filter(m => m.type === options.scopeType);
       filteredDives = dives.filter(d =>
@@ -25,8 +125,20 @@ const Report = (() => {
       filteredMeasurements = (measurements || []).filter(m =>
         filteredDives.some(d => d.code === m.dive)
       );
+      revisitTasks = revisitTasks.filter(t => t.type === options.scopeType);
     } else if (scope === "review" && options.scopeReview) {
       filteredMarks = marks.filter(m => (m.review?.status || "collected") === options.scopeReview);
+      filteredDives = dives.filter(d =>
+        filteredMarks.some(m => m.dive === d.code)
+      );
+      filteredMeasurements = (measurements || []).filter(m =>
+        filteredDives.some(d => d.code === m.dive)
+      );
+    } else if (scope === "revisit") {
+      filteredMarks = marks.filter(m => {
+        const s = m.review?.status || "collected";
+        return s === "pending" || s === "revisit";
+      });
       filteredDives = dives.filter(d =>
         filteredMarks.some(m => m.dive === d.code)
       );
@@ -166,6 +278,21 @@ const Report = (() => {
       mapSnapshotMarks,
       importErrors: normalizedImportErrors,
       importErrorsSummary,
+      revisitTasks,
+      revisitTasksSummary: {
+        totalTasks: revisitTasks.length,
+        totalMarks: revisitTasks.reduce((sum, t) => sum + (t.marks ? t.marks.length : 0), 0),
+        highPriority: revisitTasks.filter(t => t.priority === "high").length,
+        byDive: (() => {
+          const byDive = {};
+          revisitTasks.forEach(t => {
+            if (!byDive[t.dive]) byDive[t.dive] = { tasks: 0, marks: 0 };
+            byDive[t.dive].tasks++;
+            byDive[t.dive].marks += t.marks ? t.marks.length : 0;
+          });
+          return byDive;
+        })(),
+      },
       scale: scale ? {
         ratio: (scale.pixelDistance / scale.realDistance).toFixed(2),
         realDistance: scale.realDistance,
@@ -228,7 +355,7 @@ const Report = (() => {
     html += '<h1>水下考古现场报告</h1>';
     html += '<div class="report-meta">生成时间：' + generatedDate + '</div>';
 
-    const scopeLabels = { all: "全部数据", dive: "按潜次", type: "按类型", review: "按审核状态" };
+    const scopeLabels = { all: "全部数据", dive: "按潜次", type: "按类型", review: "按审核状态", revisit: "返潜计划" };
     html += '<div class="report-meta">报告范围：' + (scopeLabels[data.scope] || "全部数据");
     if (data.scope === "dive" && data.scopeDive) html += ' · ' + escapeHtml(data.scopeDive);
     if (data.scope === "type" && data.scopeType) html += ' · ' + (typeNames[data.scopeType] || data.scopeType);
@@ -303,6 +430,76 @@ const Report = (() => {
         html += '</tr>';
       });
       html += '</tbody></table>';
+      html += '</div>';
+    }
+
+    if (data.revisitTasks && data.revisitTasks.length > 0) {
+      html += '<div class="report-section">';
+      html += '<h2>返潜计划摘要</h2>';
+
+      const summary = data.revisitTasksSummary || {};
+      html += '<div class="report-summary-cards">';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (summary.totalTasks || 0) + '</div><div class="report-stat-label">任务组数</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (summary.totalMarks || 0) + '</div><div class="report-stat-label">涉及标记</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (summary.highPriority || 0) + '</div><div class="report-stat-label">高优先级</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (summary.byDive ? Object.keys(summary.byDive).length : 0) + '</div><div class="report-stat-label">来源潜次</div></div>';
+      html += '</div>';
+
+      html += '<table class="report-table"><thead><tr><th>优先级</th><th>类型</th><th>深度范围</th><th>位置区域</th><th>来源潜次</th><th>标记数</th><th>预计处理方式</th><th>备注</th></tr></thead><tbody>';
+      data.revisitTasks.forEach(task => {
+        const typeLabel = typeNames[task.type] || task.type;
+        const priorityLabel = priorityNames[task.priority] || task.priority;
+        html += '<tr>';
+        html += '<td><span class="pill pill-priority pill-priority-' + task.priority + '">' + priorityLabel + '</span></td>';
+        html += '<td><span class="pill ' + task.type + '">' + escapeHtml(typeLabel) + '</span></td>';
+        html += '<td>' + escapeHtml(task.depthRange) + '</td>';
+        html += '<td>' + escapeHtml(task.locationZone) + '</td>';
+        html += '<td>' + escapeHtml(task.dive) + '</td>';
+        html += '<td>' + (task.marks ? task.marks.length : 0) + '</td>';
+        html += '<td>' + escapeHtml(task.handlingMethod || "—") + '</td>';
+        html += '<td>' + escapeHtml(task.notes || "—") + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+
+      html += '<div class="revisit-task-details">';
+      data.revisitTasks.forEach((task, idx) => {
+        const typeLabel = typeNames[task.type] || task.type;
+        const priorityLabel = priorityNames[task.priority] || task.priority;
+        html += '<div class="revisit-task-detail-block">';
+        html += '<h3>任务 ' + (idx + 1) + ': ' + escapeHtml(typeLabel) + ' · ' + escapeHtml(task.depthRange) + ' · ' + escapeHtml(task.locationZone) + '</h3>';
+        html += '<div class="revisit-task-meta">';
+        html += '<span class="pill pill-priority pill-priority-' + task.priority + '">' + priorityLabel + '优先级</span>';
+        html += '<span class="muted">来源潜次: ' + escapeHtml(task.dive) + '</span>';
+        html += '<span class="muted">标记数: ' + (task.marks ? task.marks.length : 0) + '</span>';
+        if (task.handlingMethod) {
+          html += '<span class="muted">处理方式: ' + escapeHtml(task.handlingMethod) + '</span>';
+        }
+        html += '</div>';
+        if (task.notes) {
+          html += '<div class="revisit-task-notes-text">备注: ' + escapeHtml(task.notes) + '</div>';
+        }
+        if (task.marks && task.marks.length > 0) {
+          html += '<div class="revisit-task-marks-list">';
+          html += '<div class="muted small" style="margin-bottom:6px;">包含标记:</div>';
+          task.marks.forEach(m => {
+            const statusLabel = reviewStatusNames[m.reviewStatus] || m.reviewStatus;
+            html += '<div class="revisit-mark-row">';
+            html += '<b>' + escapeHtml(m.code) + '</b>';
+            html += '<span class="pill ' + m.type + ' small">' + escapeHtml(typeNames[m.type] || m.type) + '</span>';
+            html += '<span class="pill pill-review pill-review-' + m.reviewStatus + ' small">' + statusLabel + '</span>';
+            html += '<span class="muted small">深度: ' + escapeHtml(m.depth || "—") + '</span>';
+            if (m.reviewComment) {
+              html += '<span class="muted small">意见: ' + escapeHtml(m.reviewComment) + '</span>';
+            }
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+
       html += '</div>';
     }
 

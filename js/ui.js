@@ -31,6 +31,8 @@ const UI = (() => {
   let currentProject = null;
   let remeasureOriginal = null;
   let views = [];
+  let revisitPlan = [];
+  let selectedRevisitTasks = new Set();
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -102,6 +104,13 @@ const UI = (() => {
       reviewDetailTitle: document.querySelector("#reviewDetailTitle"),
       reviewDetailContent: document.querySelector("#reviewDetailContent"),
       closeReviewDetail: document.querySelector("#closeReviewDetail"),
+      revisitTab: document.querySelector("#revisitTab"),
+      revisitStats: document.querySelector("#revisitStats"),
+      revisitDiveFilter: document.querySelector("#revisitDiveFilter"),
+      revisitTypeFilter: document.querySelector("#revisitTypeFilter"),
+      revisitTaskList: document.querySelector("#revisitTaskList"),
+      createDiveFromPlanBtn: document.querySelector("#createDiveFromPlanBtn"),
+      refreshRevisitPlanBtn: document.querySelector("#refreshRevisitPlanBtn"),
       heatmapBtn: document.querySelector("#heatmapBtn"),
       heatmapControls: document.querySelector("#heatmapControls"),
       heatmapFilter: document.querySelector("#heatmapFilter"),
@@ -134,6 +143,7 @@ const UI = (() => {
     importErrors = deps.importErrors || [];
     currentProject = deps.currentProject || null;
     views = deps.views || [];
+    revisitPlan = deps.revisitPlan || [];
 
     if (gridConfig.size) {
       elements.gridSize.value = gridConfig.size;
@@ -170,6 +180,7 @@ const UI = (() => {
     updateHeatmapDiveFilter();
     updateHeatmapConditionFilter();
     updateViewSelector(views);
+    updateRevisitDiveFilter();
   }
 
   function initRibs() {
@@ -1086,6 +1097,7 @@ const UI = (() => {
     elements.tabs.forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     elements.marksTab.classList.toggle("hidden", tab !== "marks");
     elements.reviewTab.classList.toggle("hidden", tab !== "review");
+    elements.revisitTab.classList.toggle("hidden", tab !== "revisit");
     elements.divesTab.classList.toggle("hidden", tab !== "dives");
     elements.measureTab.classList.toggle("hidden", tab !== "measure");
     updateViewSelectorValue();
@@ -1095,6 +1107,8 @@ const UI = (() => {
       renderMeasureTab();
     } else if (tab === "review") {
       renderReviewTab();
+    } else if (tab === "revisit") {
+      renderRevisitTab();
     } else {
       render();
       renderAttachments();
@@ -1134,11 +1148,22 @@ const UI = (() => {
     });
   }
 
+  function updateRevisitDiveFilter() {
+    if (!elements.revisitDiveFilter) return;
+    elements.revisitDiveFilter.innerHTML = '<option value="">全部潜次</option>';
+    dives.forEach(dive => {
+      const option = document.createElement("option");
+      option.value = dive.code;
+      option.textContent = dive.code + " - " + dive.date;
+      elements.revisitDiveFilter.appendChild(option);
+    });
+  }
+
   function getReviewStatus(mark) {
     return mark.review?.status || "collected";
   }
 
-  function updateState(newMarks, newDives, newMeasurements, newScale, newGridConfig, newPending, newCurrentEditId, newCurrentEditMeasureId, newBaseMap) {
+  function updateState(newMarks, newDives, newMeasurements, newScale, newGridConfig, newPending, newCurrentEditId, newCurrentEditMeasureId, newBaseMap, newRevisitPlan) {
     marks = newMarks;
     dives = newDives;
     measurements = newMeasurements || measurements;
@@ -1151,10 +1176,14 @@ const UI = (() => {
       baseMap = newBaseMap;
       renderBaseMap();
     }
+    if (newRevisitPlan !== undefined) {
+      revisitPlan = newRevisitPlan;
+    }
 
     updateDiveSelect();
     updateDiveFilter();
     updateReviewDiveFilter();
+    updateRevisitDiveFilter();
     updateMeasureDiveSelect();
     updateHeatmapDiveFilter();
     updateHeatmapConditionFilter();
@@ -1168,6 +1197,9 @@ const UI = (() => {
     } else if (activeTab === "review") {
       render();
       renderReviewTab();
+    } else if (activeTab === "revisit") {
+      render();
+      renderRevisitTab();
     } else {
       render();
       renderAttachments();
@@ -1787,6 +1819,284 @@ const UI = (() => {
       document.body.removeChild(backdrop);
       applyStatusChange(markId, newStatus, comment, reviewer);
     };
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) document.body.removeChild(backdrop);
+    };
+  }
+
+  const priorityNames = { high: "高", medium: "中", low: "低" };
+  const handlingMethodOptions = ["采样", "拍照记录", "测量", "进一步勘查", "提取标本", "其他"];
+
+  function getFilteredRevisitTasks() {
+    let tasks = [];
+    if (callbacks && callbacks.onGetRevisitTasks) {
+      tasks = callbacks.onGetRevisitTasks() || [];
+    }
+    if (elements.revisitDiveFilter && elements.revisitDiveFilter.value) {
+      tasks = tasks.filter(t => t.dive === elements.revisitDiveFilter.value);
+    }
+    if (elements.revisitTypeFilter && elements.revisitTypeFilter.value) {
+      tasks = tasks.filter(t => t.type === elements.revisitTypeFilter.value);
+    }
+    return tasks;
+  }
+
+  function renderRevisitTab() {
+    renderRevisitStats();
+    renderRevisitTaskList();
+    bindRevisitEvents();
+  }
+
+  function renderRevisitStats() {
+    if (!elements.revisitStats) return;
+    const tasks = getFilteredRevisitTasks();
+    const totalTasks = tasks.length;
+    const totalMarks = tasks.reduce((sum, t) => sum + (t.marks ? t.marks.length : 0), 0);
+    const highPriority = tasks.filter(t => t.priority === "high").length;
+    const diveCount = new Set(tasks.map(t => t.dive)).size;
+
+    let html = '<div class="stats-grid">';
+    html += '<div class="stat-card"><div class="stat-value">' + totalTasks + '</div><div class="stat-label">任务组数</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + totalMarks + '</div><div class="stat-label">标记总数</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + highPriority + '</div><div class="stat-label">高优先级</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + diveCount + '</div><div class="stat-label">涉及潜次</div></div>';
+    html += '</div>';
+
+    elements.revisitStats.innerHTML = html;
+  }
+
+  function renderRevisitTaskList() {
+    if (!elements.revisitTaskList) return;
+    const tasks = getFilteredRevisitTasks();
+
+    if (tasks.length === 0) {
+      elements.revisitTaskList.innerHTML = '<div class="revisit-empty"><div class="empty-icon">📋</div><div class="muted">暂无待处理的返潜任务</div><div class="muted small">审核状态为「待复核」或「需返潜」的标记将自动聚合到这里</div></div>';
+      return;
+    }
+
+    let html = '';
+    tasks.forEach(task => {
+      const isSelected = selectedRevisitTasks.has(task.id);
+      html += buildRevisitTaskCard(task, isSelected);
+    });
+
+    elements.revisitTaskList.innerHTML = html;
+  }
+
+  function buildRevisitTaskCard(task, isSelected) {
+    const typeLabel = typeNames[task.type] || task.type;
+    const priorityLabel = priorityNames[task.priority] || task.priority;
+    const markCount = task.marks ? task.marks.length : 0;
+    const isSelectedClass = isSelected ? ' selected' : '';
+
+    let markPreviews = '';
+    if (task.marks && task.marks.length > 0) {
+      const previewMarks = task.marks.slice(0, 3);
+      markPreviews = '<div class="revisit-marks-preview">';
+      previewMarks.forEach(m => {
+        const status = m.reviewStatus || "pending";
+        markPreviews += '<span class="pill ' + m.type + ' small" title="' + escapeHtml(m.code) + ' · ' + escapeHtml(m.depth || "") + '">' + escapeHtml(m.code) + '</span>';
+      });
+      if (task.marks.length > 3) {
+        markPreviews += '<span class="muted small">+' + (task.marks.length - 3) + '个</span>';
+      }
+      markPreviews += '</div>';
+    }
+
+    return '<div class="revisit-task-card priority-' + task.priority + isSelectedClass + '" data-id="' + task.id + '">' +
+      '<div class="revisit-task-header">' +
+      '<label class="checkbox-label revisit-checkbox">' +
+      '<input type="checkbox" class="revisit-task-select" data-id="' + task.id + '"' + (isSelected ? ' checked' : '') + '>' +
+      '<span class="priority-badge priority-' + task.priority + '">' + priorityLabel + '优先</span>' +
+      '</label>' +
+      '<span class="pill ' + task.type + '">' + typeLabel + '</span>' +
+      '</div>' +
+      '<div class="revisit-task-info">' +
+      '<div class="revisit-task-title">' +
+      '<b>' + escapeHtml(task.depthRange) + '</b> · ' + escapeHtml(task.locationZone) +
+      '</div>' +
+      '<div class="muted small">来源潜次: ' + escapeHtml(task.dive) + ' · ' + markCount + '个标记</div>' +
+      markPreviews +
+      '</div>' +
+      '<div class="revisit-task-fields">' +
+      '<div class="revisit-field">' +
+      '<label>处理方式</label>' +
+      '<select class="revisit-handling-method" data-id="' + task.id + '">' +
+      '<option value="">未设置</option>' +
+      handlingMethodOptions.map(m => '<option value="' + m + '"' + (task.handlingMethod === m ? ' selected' : '') + '>' + m + '</option>').join('') +
+      '</select>' +
+      '</div>' +
+      '<div class="revisit-field">' +
+      '<label>优先级</label>' +
+      '<select class="revisit-priority" data-id="' + task.id + '">' +
+      '<option value="high"' + (task.priority === 'high' ? ' selected' : '') + '>高</option>' +
+      '<option value="medium"' + (task.priority === 'medium' ? ' selected' : '') + '>中</option>' +
+      '<option value="low"' + (task.priority === 'low' ? ' selected' : '') + '>低</option>' +
+      '</select>' +
+      '</div>' +
+      '</div>' +
+      '<div class="revisit-task-notes">' +
+      '<label>备注</label>' +
+      '<textarea class="revisit-notes-input" data-id="' + task.id + '" placeholder="添加任务备注...">' + escapeHtml(task.notes || '') + '</textarea>' +
+      '</div>' +
+      '<div class="revisit-task-actions">' +
+      '<button type="button" class="secondary small revisit-save-btn" data-id="' + task.id + '">保存设置</button>' +
+      '<button type="button" class="secondary small revisit-view-marks-btn" data-id="' + task.id + '">查看标记</button>' +
+      '</div>' +
+      '</div>';
+  }
+
+  function bindRevisitEvents() {
+    if (!elements.revisitTaskList) return;
+
+    document.querySelectorAll(".revisit-task-select").forEach(checkbox => {
+      checkbox.onclick = (e) => {
+        e.stopPropagation();
+        const taskId = checkbox.dataset.id;
+        if (checkbox.checked) {
+          selectedRevisitTasks.add(taskId);
+        } else {
+          selectedRevisitTasks.delete(taskId);
+        }
+      };
+    });
+
+    document.querySelectorAll(".revisit-save-btn").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.id;
+        saveRevisitTask(taskId);
+      };
+    });
+
+    document.querySelectorAll(".revisit-view-marks-btn").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.id;
+        showRevisitTaskMarks(taskId);
+      };
+    });
+
+    if (elements.revisitDiveFilter) {
+      elements.revisitDiveFilter.onchange = () => {
+        renderRevisitTab();
+      };
+    }
+
+    if (elements.revisitTypeFilter) {
+      elements.revisitTypeFilter.onchange = () => {
+        renderRevisitTab();
+      };
+    }
+
+    if (elements.refreshRevisitPlanBtn) {
+      elements.refreshRevisitPlanBtn.onclick = () => {
+        renderRevisitTab();
+        showToast("已刷新任务聚合", "success");
+      };
+    }
+
+    if (elements.createDiveFromPlanBtn) {
+      elements.createDiveFromPlanBtn.onclick = () => {
+        if (selectedRevisitTasks.size === 0) {
+          showToast("请先选择要创建潜次的任务", "error");
+          return;
+        }
+        if (callbacks && callbacks.onCreateDiveFromRevisitPlan) {
+          const taskIds = Array.from(selectedRevisitTasks);
+          const result = callbacks.onCreateDiveFromRevisitPlan(taskIds);
+          if (result) {
+            selectedRevisitTasks.clear();
+            switchTab("dives");
+          }
+        }
+      };
+    }
+  }
+
+  function saveRevisitTask(taskId) {
+    const tasks = getFilteredRevisitTasks();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const priorityEl = document.querySelector('.revisit-priority[data-id="' + taskId + '"]');
+    const methodEl = document.querySelector('.revisit-handling-method[data-id="' + taskId + '"]');
+    const notesEl = document.querySelector('.revisit-notes-input[data-id="' + taskId + '"]');
+
+    const taskData = {
+      id: taskId,
+      dive: task.dive,
+      type: task.type,
+      depthRange: task.depthRange,
+      locationZone: task.locationZone,
+      priority: priorityEl ? priorityEl.value : task.priority,
+      handlingMethod: methodEl ? methodEl.value : task.handlingMethod,
+      notes: notesEl ? notesEl.value : task.notes,
+    };
+
+    if (callbacks && callbacks.onSaveRevisitTask) {
+      callbacks.onSaveRevisitTask(taskData);
+      showToast("任务设置已保存", "success");
+    }
+  }
+
+  function showRevisitTaskMarks(taskId) {
+    const tasks = getFilteredRevisitTasks();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !task.marks) return;
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-revisit-marks";
+
+    let html = '<h2>任务包含的标记</h2>';
+    html += '<div class="muted" style="margin-bottom:12px;">' + escapeHtml(task.depthRange) + ' · ' + escapeHtml(task.locationZone) + ' · 共' + task.marks.length + '个标记</div>';
+    html += '<div class="revisit-marks-detail">';
+
+    task.marks.forEach(mark => {
+      const statusLabel = reviewStatusNames[mark.reviewStatus] || mark.reviewStatus;
+      html += '<div class="revisit-mark-item">';
+      html += '<div class="revisit-mark-header">';
+      html += '<b>' + escapeHtml(mark.code) + '</b>';
+      html += '<span class="pill ' + mark.type + '">' + (typeNames[mark.type] || mark.type) + '</span>';
+      html += '<span class="pill pill-review pill-review-' + mark.reviewStatus + '">' + statusLabel + '</span>';
+      html += '</div>';
+      html += '<div class="muted small">深度: ' + escapeHtml(mark.depth || "—") + '</div>';
+      if (mark.condition) {
+        html += '<div class="muted small">保存状态: ' + escapeHtml(mark.condition) + '</div>';
+      }
+      if (mark.reviewComment) {
+        html += '<div class="revisit-mark-comment">' + escapeHtml(mark.reviewComment) + '</div>';
+      }
+      html += '<button type="button" class="secondary small revisit-mark-edit-btn" data-id="' + mark.id + '">编辑标记</button>';
+      html += '</div>';
+    });
+
+    html += '</div>';
+    html += '<div class="toolbar" style="margin-top:16px;">';
+    html += '<button type="button" id="closeRevisitMarksBtn" class="secondary">关闭</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    modal.querySelector("#closeRevisitMarksBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
+
+    modal.querySelectorAll(".revisit-mark-edit-btn").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const markId = btn.dataset.id;
+        document.body.removeChild(backdrop);
+        switchTab("marks");
+        edit(markId);
+      };
+    });
+
     backdrop.onclick = (e) => {
       if (e.target === backdrop) document.body.removeChild(backdrop);
     };
@@ -3939,6 +4249,7 @@ const UI = (() => {
     html += '<option value="dive">按潜次筛选</option>';
     html += '<option value="type">按类型筛选</option>';
     html += '<option value="review">按审核状态筛选</option>';
+    html += '<option value="revisit">返潜计划</option>';
     html += '</select>';
     html += '</div>';
 
@@ -4011,6 +4322,7 @@ const UI = (() => {
         scopeType: scopeSelect.value === "type" ? modal.querySelector("#reportScopeType").value : "",
         scopeReview: scopeSelect.value === "review" ? modal.querySelector("#reportScopeReview").value : "",
         importErrors: importErrors || [],
+        revisitPlan: revisitPlan || [],
       };
 
       const data = Report.aggregate(options);
@@ -4178,7 +4490,7 @@ const UI = (() => {
       const hmLabels = { dive: "按潜次", type: "按类型", review: "按审核", none: "不显示" };
       parts.push("热力图: " + (hmLabels[view.heatmapGroup] || view.heatmapGroup));
     }
-    const tabLabels = { marks: "文物点", review: "审核", dives: "潜次", measure: "测量" };
+    const tabLabels = { marks: "文物点", review: "审核", dives: "潜次", measure: "测量", revisit: "返潜计划" };
     parts.push("标签: " + (tabLabels[view.activeTab] || view.activeTab));
     const modeLabels = { list: "列表", timeline: "时间线" };
     parts.push("模式: " + (modeLabels[view.viewMode] || view.viewMode));

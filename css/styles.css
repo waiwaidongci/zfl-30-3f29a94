@@ -1361,6 +1361,300 @@ button.small {
   color: #183035 !important;
 }
 
+.revisit-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.revisit-toolbar select {
+  flex: 1;
+  min-width: 0;
+}
+
+.revisit-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.revisit-actions button {
+  flex: 1;
+}
+
+.revisit-task-list {
+  display: grid;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.revisit-task-card {
+  border: 1px solid #d7e4e5;
+  border-radius: 8px;
+  padding: 12px;
+  border-left: 4px solid #6c757d;
+  transition: all 0.2s;
+}
+
+.revisit-task-card:hover {
+  border-color: #a8c5c9;
+  background: #f5fafb;
+}
+
+.revisit-task-card.selected {
+  border-color: #1d6c78;
+  background: #eef8f9;
+}
+
+.revisit-task-card.priority-high {
+  border-left-color: #e91e63;
+}
+
+.revisit-task-card.priority-medium {
+  border-left-color: #ff9800;
+}
+
+.revisit-task-card.priority-low {
+  border-left-color: #4caf50;
+}
+
+.revisit-task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.revisit-checkbox {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.revisit-checkbox input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.priority-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.priority-badge.priority-high {
+  background: #fce4ec;
+  color: #c2185b;
+  border: 1px solid #f8bbd0;
+}
+
+.priority-badge.priority-medium {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffe0b2;
+}
+
+.priority-badge.priority-low {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.revisit-task-title {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.revisit-task-info {
+  margin-bottom: 10px;
+}
+
+.revisit-marks-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.revisit-marks-preview .pill.small {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.revisit-task-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.revisit-field label {
+  margin: 0 0 4px 0;
+  font-size: 12px;
+}
+
+.revisit-field select {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.revisit-task-notes {
+  margin-bottom: 10px;
+}
+
+.revisit-task-notes label {
+  margin: 0 0 4px 0;
+  font-size: 12px;
+}
+
+.revisit-task-notes textarea {
+  min-height: 48px;
+  padding: 6px 8px;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.revisit-task-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.revisit-task-actions button {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.revisit-empty {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.revisit-empty .empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.modal-revisit-marks {
+  max-width: 640px;
+}
+
+.revisit-marks-detail {
+  display: grid;
+  gap: 8px;
+  max-height: 400px;
+  overflow: auto;
+}
+
+.revisit-mark-item {
+  padding: 10px 12px;
+  background: #f5fafb;
+  border: 1px solid #d7e4e5;
+  border-radius: 8px;
+}
+
+.revisit-mark-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.revisit-mark-comment {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #fff;
+  border-radius: 4px;
+  font-size: 13px;
+  border-left: 3px solid #1d6c78;
+}
+
+.pill-priority {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pill-priority-high {
+  background: #fce4ec;
+  border-color: #f48fb1;
+  color: #c2185b;
+}
+
+.pill-priority-medium {
+  background: #fff3e0;
+  border-color: #ffcc80;
+  color: #e65100;
+}
+
+.pill-priority-low {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+  color: #2e7d32;
+}
+
+.revisit-task-details {
+  margin-top: 16px;
+}
+
+.revisit-task-detail-block {
+  padding: 12px;
+  background: #f5fafb;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #d7e4e5;
+}
+
+.revisit-task-detail-block h3 {
+  margin: 0 0 8px 0;
+  font-size: 15px;
+}
+
+.revisit-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.revisit-task-notes-text {
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  border-left: 3px solid #1d6c78;
+  margin-bottom: 10px;
+}
+
+.revisit-task-marks-list {
+  display: grid;
+  gap: 4px;
+}
+
+.revisit-mark-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #fff;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.pill.small {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
 .modal-report {
   max-width: 860px;
 }

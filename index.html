@@ -113,6 +113,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="marks">标记管理</button>
         <button class="tab" data-tab="review">审核看板</button>
+        <button class="tab" data-tab="revisit">返潜计划</button>
         <button class="tab" data-tab="dives">潜次档案</button>
         <button class="tab" data-tab="measure">测距与网格</button>
       </div>
@@ -297,6 +298,27 @@
           </div>
           <div id="reviewDetailContent"></div>
         </div>
+      </div>
+
+      <div id="revisitTab" class="tab-content hidden">
+        <div class="revisit-stats" id="revisitStats"></div>
+        <div class="revisit-toolbar">
+          <select id="revisitDiveFilter">
+            <option value="">全部潜次</option>
+          </select>
+          <select id="revisitTypeFilter">
+            <option value="">全部类型</option>
+            <option value="ceramic">陶片</option>
+            <option value="wood">木构件</option>
+            <option value="metal">金属件</option>
+            <option value="unknown">未知物</option>
+          </select>
+        </div>
+        <div class="revisit-actions">
+          <button type="button" id="createDiveFromPlanBtn" class="primary">创建潜次目标</button>
+          <button type="button" id="refreshRevisitPlanBtn" class="secondary">刷新聚合</button>
+        </div>
+        <div id="revisitTaskList" class="revisit-task-list"></div>
       </div>
 
       <div id="measureTab" class="tab-content hidden">

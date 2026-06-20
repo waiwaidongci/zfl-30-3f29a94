@@ -6,6 +6,7 @@ const DataIO = (() => {
   const OLD_GRID_STORAGE_KEY = "zfl30Grid";
   const OLD_IMPORT_ERRORS_STORAGE_KEY = "zfl30ImportErrors";
   const OLD_BASEMAP_STORAGE_KEY = "zfl30BaseMap";
+  const OLD_REVISIT_PLAN_STORAGE_KEY = "zfl30RevisitPlan";
   const THUMBNAIL_MAX_SIZE = 200;
   const MAX_IMAGE_SIZE_MB = 5;
   const STORAGE_WARNING_THRESHOLD = 0.8;
@@ -28,6 +29,7 @@ const DataIO = (() => {
   function _importErrorsKey() { return _projectId ? ProjectManager.projKey(_projectId, "importErrors") : OLD_IMPORT_ERRORS_STORAGE_KEY; }
   function _baseMapKey() { return _projectId ? ProjectManager.projKey(_projectId, "baseMap") : OLD_BASEMAP_STORAGE_KEY; }
   function _viewsKey() { return _projectId ? ProjectManager.projKey(_projectId, "views") : "zfl30Views"; }
+  function _revisitPlanKey() { return _projectId ? ProjectManager.projKey(_projectId, "revisitPlan") : OLD_REVISIT_PLAN_STORAGE_KEY; }
 
   function getDefaultSampling() {
     return {
@@ -216,7 +218,20 @@ const DataIO = (() => {
     localStorage.setItem(_viewsKey(), JSON.stringify(views || []));
   }
 
-  function exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, filename = "dive-records.json") {
+  function loadRevisitPlan() {
+    try {
+      return JSON.parse(localStorage.getItem(_revisitPlanKey()) || "[]");
+    } catch (e) {
+      console.error("Failed to load revisit plan:", e);
+      return [];
+    }
+  }
+
+  function saveRevisitPlan(plan) {
+    localStorage.setItem(_revisitPlanKey(), JSON.stringify(plan || []));
+  }
+
+  function exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, revisitPlan, filename = "dive-records.json") {
     const processedMarks = marks.map((m) => {
       m = ensureReviewData(m);
       m = ensureSamplingData(m);
@@ -231,6 +246,7 @@ const DataIO = (() => {
       scale: scale || null,
       gridConfig: gridConfig || null,
       baseMap: baseMap || null,
+      revisitPlan: revisitPlan || [],
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -411,7 +427,7 @@ const DataIO = (() => {
 
   function getStorageUsage() {
     let totalSize = 0;
-    const keyFn = [_marksKey, _divesKey, _measurementsKey, _scaleKey, _gridKey, _importErrorsKey, _baseMapKey, _viewsKey];
+    const keyFn = [_marksKey, _divesKey, _measurementsKey, _scaleKey, _gridKey, _importErrorsKey, _baseMapKey, _viewsKey, _revisitPlanKey];
 
     keyFn.forEach((fn) => {
       const value = localStorage.getItem(fn());
@@ -687,6 +703,8 @@ const DataIO = (() => {
     saveBaseMap,
     loadViews,
     saveViews,
+    loadRevisitPlan,
+    saveRevisitPlan,
     generateThumbnail,
     getImageDimensions,
     processImageFile,
