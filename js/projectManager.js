@@ -232,7 +232,7 @@ const ProjectManager = (() => {
     const idx = projects.findIndex((p) => p.id === projectId);
     if (idx === -1) return false;
 
-    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap"].forEach((suffix) => {
+    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap", "views"].forEach((suffix) => {
       localStorage.removeItem(projKey(projectId, suffix));
     });
 
@@ -272,7 +272,7 @@ const ProjectManager = (() => {
 
   function getProjectStorageUsage(projectId) {
     let totalSize = 0;
-    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap"].forEach((suffix) => {
+    ["marks", "dives", "measurements", "scale", "grid", "importErrors", "baseMap", "views"].forEach((suffix) => {
       const value = localStorage.getItem(projKey(projectId, suffix));
       if (value) {
         totalSize += new Blob([value]).size;

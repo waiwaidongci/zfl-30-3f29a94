@@ -38,6 +38,15 @@
   <main class="app">
     <section class="panel">
       <div class="map-toolbar">
+        <div class="view-selector-container">
+          <label class="view-selector-label">工作视图</label>
+          <select id="viewSelector">
+            <option value="">默认视图</option>
+          </select>
+          <button type="button" id="saveViewBtn" class="secondary" title="保存当前筛选条件为视图">保存视图</button>
+          <button type="button" id="manageViewsBtn" class="secondary" title="管理视图">管理</button>
+        </div>
+        <div class="toolbar-divider"></div>
         <select id="diveFilter">
           <option value="">全部潜次</option>
         </select>

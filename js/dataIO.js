@@ -27,6 +27,7 @@ const DataIO = (() => {
   function _gridKey() { return _projectId ? ProjectManager.projKey(_projectId, "grid") : OLD_GRID_STORAGE_KEY; }
   function _importErrorsKey() { return _projectId ? ProjectManager.projKey(_projectId, "importErrors") : OLD_IMPORT_ERRORS_STORAGE_KEY; }
   function _baseMapKey() { return _projectId ? ProjectManager.projKey(_projectId, "baseMap") : OLD_BASEMAP_STORAGE_KEY; }
+  function _viewsKey() { return _projectId ? ProjectManager.projKey(_projectId, "views") : "zfl30Views"; }
 
   function getDefaultSampling() {
     return {
@@ -200,6 +201,19 @@ const DataIO = (() => {
 
   function saveImportErrors(errors) {
     localStorage.setItem(_importErrorsKey(), JSON.stringify(errors || []));
+  }
+
+  function loadViews() {
+    try {
+      return JSON.parse(localStorage.getItem(_viewsKey()) || "[]");
+    } catch (e) {
+      console.error("Failed to load views:", e);
+      return [];
+    }
+  }
+
+  function saveViews(views) {
+    localStorage.setItem(_viewsKey(), JSON.stringify(views || []));
   }
 
   function exportFullData(marks, dives, measurements, scale, gridConfig, baseMap, filename = "dive-records.json") {
@@ -397,7 +411,7 @@ const DataIO = (() => {
 
   function getStorageUsage() {
     let totalSize = 0;
-    const keyFn = [_marksKey, _divesKey, _measurementsKey, _scaleKey, _gridKey, _importErrorsKey, _baseMapKey];
+    const keyFn = [_marksKey, _divesKey, _measurementsKey, _scaleKey, _gridKey, _importErrorsKey, _baseMapKey, _viewsKey];
 
     keyFn.forEach((fn) => {
       const value = localStorage.getItem(fn());
@@ -671,6 +685,8 @@ const DataIO = (() => {
     ensureSamplingData,
     loadBaseMap,
     saveBaseMap,
+    loadViews,
+    saveViews,
     generateThumbnail,
     getImageDimensions,
     processImageFile,

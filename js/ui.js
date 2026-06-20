@@ -30,6 +30,7 @@ const UI = (() => {
   let importErrors = [];
   let currentProject = null;
   let remeasureOriginal = null;
+  let views = [];
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -117,6 +118,9 @@ const UI = (() => {
       addParticipantBtn: document.querySelector("#addParticipantBtn"),
       participantsList: document.querySelector("#participantsList"),
       participantsEmpty: document.querySelector("#participantsEmpty"),
+      viewSelector: document.querySelector("#viewSelector"),
+      saveViewBtn: document.querySelector("#saveViewBtn"),
+      manageViewsBtn: document.querySelector("#manageViewsBtn"),
     };
 
     marks = deps.marks;
@@ -129,6 +133,7 @@ const UI = (() => {
     currentEditId = deps.currentEditId;
     importErrors = deps.importErrors || [];
     currentProject = deps.currentProject || null;
+    views = deps.views || [];
 
     if (gridConfig.size) {
       elements.gridSize.value = gridConfig.size;
@@ -164,6 +169,7 @@ const UI = (() => {
     }
     updateHeatmapDiveFilter();
     updateHeatmapConditionFilter();
+    updateViewSelector(views);
   }
 
   function initRibs() {
@@ -531,10 +537,29 @@ const UI = (() => {
 
     elements.addParticipantBtn.onclick = handleAddParticipant;
 
-    elements.filter.onchange = () => { render(); renderHeatmap(); };
-    elements.diveFilter.onchange = () => { render(); renderHeatmap(); };
-    elements.reviewFilter.onchange = () => { render(); renderHeatmap(); };
-    elements.view.onchange = render;
+    elements.filter.onchange = () => { render(); renderHeatmap(); updateViewSelectorValue(); };
+    elements.diveFilter.onchange = () => { render(); renderHeatmap(); updateViewSelectorValue(); };
+    elements.reviewFilter.onchange = () => { render(); renderHeatmap(); updateViewSelectorValue(); };
+    elements.view.onchange = () => { render(); updateViewSelectorValue(); };
+
+    if (elements.viewSelector) {
+      elements.viewSelector.onchange = () => {
+        const viewId = elements.viewSelector.value;
+        if (viewId && callbacks.onApplyView) {
+          callbacks.onApplyView(viewId);
+        }
+      };
+    }
+    if (elements.saveViewBtn) {
+      elements.saveViewBtn.onclick = () => {
+        showSaveViewModal();
+      };
+    }
+    if (elements.manageViewsBtn) {
+      elements.manageViewsBtn.onclick = () => {
+        showManageViewsModal();
+      };
+    }
 
     if (elements.heatmapBtn) {
       elements.heatmapBtn.onclick = toggleHeatmap;
@@ -546,6 +571,7 @@ const UI = (() => {
       elements.heatmapFilter.onchange = () => {
         Heatmap.setState({ filterMode: elements.heatmapFilter.value });
         renderHeatmap();
+        updateViewSelectorValue();
       };
     }
     if (elements.heatmapOpacity) {
@@ -1062,6 +1088,7 @@ const UI = (() => {
     elements.reviewTab.classList.toggle("hidden", tab !== "review");
     elements.divesTab.classList.toggle("hidden", tab !== "dives");
     elements.measureTab.classList.toggle("hidden", tab !== "measure");
+    updateViewSelectorValue();
     if (tab === "dives") {
       renderDives();
     } else if (tab === "measure") {
@@ -3865,6 +3892,186 @@ const UI = (() => {
     }).join("");
   }
 
+  function getCurrentViewState() {
+    return {
+      dive: elements.diveFilter.value,
+      type: elements.filter.value,
+      reviewStatus: elements.reviewFilter.value,
+      heatmapGroup: elements.heatmapFilter ? elements.heatmapFilter.value : "",
+      activeTab: activeTab,
+      viewMode: elements.view.value,
+    };
+  }
+
+  function updateViewSelector(viewList) {
+    views = viewList || [];
+    if (!elements.viewSelector) return;
+    const current = getCurrentViewState();
+    let html = '<option value="">默认视图</option>';
+    for (const v of views) {
+      const match = v.dive === current.dive &&
+        v.type === current.type &&
+        v.reviewStatus === current.reviewStatus &&
+        v.heatmapGroup === current.heatmapGroup &&
+        v.activeTab === current.activeTab &&
+        v.viewMode === current.viewMode;
+      html += '<option value="' + v.id + '"' + (match ? ' selected' : '') + '>' + escapeHtml(v.name) + '</option>';
+    }
+    elements.viewSelector.innerHTML = html;
+  }
+
+  function updateViewSelectorValue() {
+    if (!elements.viewSelector) return;
+    const current = getCurrentViewState();
+    let foundId = null;
+    for (const v of views) {
+      if (v.dive === current.dive &&
+          v.type === current.type &&
+          v.reviewStatus === current.reviewStatus &&
+          v.heatmapGroup === current.heatmapGroup &&
+          v.activeTab === current.activeTab &&
+          v.viewMode === current.viewMode) {
+        foundId = v.id;
+        break;
+      }
+    }
+    elements.viewSelector.value = foundId || "";
+  }
+
+  function applyViewState(view) {
+    if (!view) return;
+    elements.diveFilter.value = view.dive || "";
+    elements.filter.value = view.type || "all";
+    elements.reviewFilter.value = view.reviewStatus || "all";
+    if (elements.heatmapFilter && view.heatmapGroup) {
+      elements.heatmapFilter.value = view.heatmapGroup;
+      Heatmap.setState({ filterMode: view.heatmapGroup });
+    }
+    elements.view.value = view.viewMode || "list";
+    switchTab(view.activeTab || "marks");
+  }
+
+  function buildViewSummary(view) {
+    const parts = [];
+    if (view.dive) parts.push("潜次: " + view.dive);
+    const typeLabel = view.type === "all" ? "全部类型" : typeNames[view.type];
+    parts.push("类型: " + (typeLabel || view.type));
+    const reviewLabel = view.reviewStatus === "all" ? "全部状态" : reviewStatusNames[view.reviewStatus];
+    parts.push("审核: " + (reviewLabel || view.reviewStatus));
+    if (view.heatmapGroup) {
+      const hmLabels = { dive: "按潜次", type: "按类型", review: "按审核", none: "不显示" };
+      parts.push("热力图: " + (hmLabels[view.heatmapGroup] || view.heatmapGroup));
+    }
+    const tabLabels = { marks: "文物点", review: "审核", dives: "潜次", measure: "测量" };
+    parts.push("标签: " + (tabLabels[view.activeTab] || view.activeTab));
+    const modeLabels = { list: "列表", timeline: "时间线" };
+    parts.push("模式: " + (modeLabels[view.viewMode] || view.viewMode));
+    return parts.join(" | ");
+  }
+
+  function showSaveViewModal() {
+    const state = getCurrentViewState();
+    const summary = buildViewSummary({ ...state });
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "modal modal-view-form";
+    modal.innerHTML =
+      '<h2>保存工作视图</h2>' +
+      '<div class="view-form-summary">' + escapeHtml(summary) + '</div>' +
+      '<label class="view-form-label">视图名称</label>' +
+      '<input type="text" id="viewNameInput" maxlength="50" placeholder="例如：2024秋季陶片审核">' +
+      '<div class="view-form-actions">' +
+      '<button type="button" id="cancelSaveViewBtn" class="secondary">取消</button>' +
+      '<button type="button" id="confirmSaveViewBtn">保存</button>' +
+      '</div>';
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    const nameInput = modal.querySelector("#viewNameInput");
+    setTimeout(() => nameInput.focus(), 50);
+    backdrop.onclick = (e) => { if (e.target === backdrop) { document.body.removeChild(backdrop); } };
+    modal.querySelector("#cancelSaveViewBtn").onclick = () => { document.body.removeChild(backdrop); };
+    modal.querySelector("#confirmSaveViewBtn").onclick = () => {
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); return; }
+      if (callbacks.onSaveView) {
+        callbacks.onSaveView({ name, ...state });
+      }
+      document.body.removeChild(backdrop);
+    };
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") modal.querySelector("#confirmSaveViewBtn").click();
+    });
+  }
+
+  function showManageViewsModal() {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "modal modal-view-form";
+    const renderList = () => {
+      let listHtml = '<h2>管理工作视图</h2>';
+      if (views.length === 0) {
+        listHtml += '<div class="view-empty">暂无保存的视图</div>';
+      } else {
+        listHtml += '<div class="view-list">';
+        for (const v of views) {
+          listHtml +=
+            '<div class="view-item" data-id="' + v.id + '">' +
+            '<div class="view-item-name">' + escapeHtml(v.name) + '</div>' +
+            '<div class="view-item-summary">' + escapeHtml(buildViewSummary(v)) + '</div>' +
+            '<div class="view-item-actions">' +
+            '<button type="button" class="secondary view-apply-btn" data-id="' + v.id + '">应用</button>' +
+            '<button type="button" class="secondary view-rename-btn" data-id="' + v.id + '">重命名</button>' +
+            '<button type="button" class="danger view-delete-btn" data-id="' + v.id + '">删除</button>' +
+            '</div>' +
+            '</div>';
+        }
+        listHtml += '</div>';
+      }
+      listHtml += '<div class="view-form-actions"><button type="button" id="closeManageViewsBtn">关闭</button></div>';
+      modal.innerHTML = listHtml;
+      modal.querySelector("#closeManageViewsBtn").onclick = () => { document.body.removeChild(backdrop); };
+      modal.querySelectorAll(".view-apply-btn").forEach((btn) => {
+        btn.onclick = () => {
+          const id = btn.dataset.id;
+          if (callbacks.onApplyView) callbacks.onApplyView(id);
+          document.body.removeChild(backdrop);
+        };
+      });
+      modal.querySelectorAll(".view-rename-btn").forEach((btn) => {
+        btn.onclick = () => {
+          const id = btn.dataset.id;
+          const v = views.find((x) => x.id === id);
+          if (!v) return;
+          const newName = prompt("请输入新的视图名称：", v.name);
+          if (newName !== null) {
+            const trimmed = newName.trim();
+            if (trimmed && callbacks.onRenameView) {
+              callbacks.onRenameView(id, trimmed);
+              renderList();
+            }
+          }
+        };
+      });
+      modal.querySelectorAll(".view-delete-btn").forEach((btn) => {
+        btn.onclick = () => {
+          const id = btn.dataset.id;
+          const v = views.find((x) => x.id === id);
+          if (!v) return;
+          if (confirm("确定要删除视图「" + v.name + "」吗？")) {
+            if (callbacks.onDeleteView) callbacks.onDeleteView(id);
+            renderList();
+          }
+        };
+      });
+    };
+    renderList();
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    backdrop.onclick = (e) => { if (e.target === backdrop) { document.body.removeChild(backdrop); } };
+  }
+
   function resetAllState() {
     pending = null;
     currentEditId = null;
@@ -3896,6 +4103,8 @@ const UI = (() => {
     elements.diveFilter.value = "";
     elements.reviewFilter.value = "";
     elements.view.value = "list";
+    views = [];
+    updateViewSelector([]);
   }
 
   function showProjectManagerModal() {
@@ -4082,6 +4291,10 @@ const UI = (() => {
     getCurrentAttachments,
     showReportModal,
     updateProjectSelector,
+    updateViewSelector,
+    applyViewState,
+    showSaveViewModal,
+    showManageViewsModal,
     typeNames,
     weatherNames,
     currentNames,

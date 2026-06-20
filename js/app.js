@@ -10,6 +10,7 @@ const App = (() => {
   let currentEditMeasureId = null;
   let importErrors = [];
   let currentProject = null;
+  let views = [];
 
   function setImportErrors(errors) {
     importErrors = errors || [];
@@ -151,6 +152,9 @@ const App = (() => {
     scale = DataIO.loadScale();
     importErrors = DataIO.loadImportErrors();
     baseMap = DataIO.loadBaseMap();
+    views = DataIO.loadViews();
+    views = validateAndDegradeViews(views);
+    saveViews();
     const savedGridConfig = DataIO.loadGridConfig();
     if (savedGridConfig) {
       gridConfig = savedGridConfig;
@@ -204,6 +208,11 @@ const App = (() => {
       onArchiveProject: handleArchiveProject,
       onUnarchiveProject: handleUnarchiveProject,
       onDeleteProject: handleDeleteProject,
+      onSaveView: handleSaveView,
+      onApplyView: handleApplyView,
+      onDeleteView: handleDeleteView,
+      onRenameView: handleRenameView,
+      onGetViews: handleGetViews,
     };
 
     UI.init({
@@ -218,6 +227,7 @@ const App = (() => {
       importErrors,
       callbacks,
       currentProject,
+      views,
     });
 
     UI.render();
@@ -251,6 +261,7 @@ const App = (() => {
       importErrors,
       callbacks,
       currentProject,
+      views,
     });
     UI.render();
     UI.showToast("已切换到项目「" + currentProject.name + "」", "success");
@@ -353,6 +364,150 @@ const App = (() => {
 
   function saveBaseMap() {
     DataIO.saveBaseMap(baseMap);
+  }
+
+  function saveViews() {
+    DataIO.saveViews(views);
+  }
+
+  function validateAndDegradeViews(viewList) {
+    if (!Array.isArray(viewList)) return [];
+    const validDiveCodes = new Set(dives.map(d => d.code));
+    const validTypes = new Set(["ceramic", "wood", "metal", "unknown"]);
+    const validStatuses = new Set(["collected", "pending", "confirmed", "revisit"]);
+    const validTabs = new Set(["marks", "review", "dives", "measure"]);
+    const validViewModes = new Set(["list", "timeline"]);
+
+    return viewList.map(view => {
+      const degraded = { ...view };
+      let changed = false;
+
+      if (degraded.dive && !validDiveCodes.has(degraded.dive)) {
+        degraded.dive = "";
+        changed = true;
+      }
+      if (degraded.type && !validTypes.has(degraded.type)) {
+        degraded.type = "";
+        changed = true;
+      }
+      if (degraded.reviewStatus && !validStatuses.has(degraded.reviewStatus)) {
+        degraded.reviewStatus = "";
+        changed = true;
+      }
+      if (degraded.activeTab && !validTabs.has(degraded.activeTab)) {
+        degraded.activeTab = "marks";
+        changed = true;
+      }
+      if (degraded.viewMode && !validViewModes.has(degraded.viewMode)) {
+        degraded.viewMode = "list";
+        changed = true;
+      }
+      if (degraded.heatmapGroup) {
+        let heatmapValid = degraded.heatmapGroup === "all";
+        if (!heatmapValid) {
+          if (degraded.heatmapGroup.startsWith("type_")) {
+            const t = degraded.heatmapGroup.replace("type_", "");
+            heatmapValid = validTypes.has(t);
+          } else if (degraded.heatmapGroup.startsWith("status_")) {
+            const s = degraded.heatmapGroup.replace("status_", "");
+            heatmapValid = validStatuses.has(s);
+          } else if (degraded.heatmapGroup.startsWith("dive_")) {
+            const d = degraded.heatmapGroup.replace("dive_", "");
+            heatmapValid = validDiveCodes.has(d);
+          } else if (degraded.heatmapGroup.startsWith("condition_")) {
+            heatmapValid = true;
+          }
+        }
+        if (!heatmapValid) {
+          degraded.heatmapGroup = "all";
+          changed = true;
+        }
+      }
+      degraded._degraded = changed;
+      return degraded;
+    });
+  }
+
+  function handleSaveView(viewData) {
+    const name = (viewData?.name || "").trim();
+    if (!name) {
+      UI.showToast("请输入视图名称", "error");
+      return null;
+    }
+    const existingIdx = views.findIndex(v => v.id === viewData?.id);
+    const now = new Date().toISOString();
+
+    if (existingIdx >= 0) {
+      views[existingIdx] = {
+        ...views[existingIdx],
+        ...viewData,
+        name,
+        updatedAt: now,
+      };
+      delete views[existingIdx]._degraded;
+    } else {
+      const newView = {
+        id: crypto.randomUUID(),
+        name,
+        dive: viewData?.dive || "",
+        type: viewData?.type || "",
+        reviewStatus: viewData?.reviewStatus || "",
+        heatmapGroup: viewData?.heatmapGroup || "all",
+        activeTab: viewData?.activeTab || "marks",
+        viewMode: viewData?.viewMode || "list",
+        createdAt: now,
+        updatedAt: now,
+      };
+      views.push(newView);
+    }
+    saveViews();
+    UI.updateViewSelector(views);
+    UI.showToast(existingIdx >= 0 ? "视图已更新" : "视图已保存", "success");
+    return views;
+  }
+
+  function handleApplyView(viewId) {
+    const view = views.find(v => v.id === viewId);
+    if (!view) {
+      UI.showToast("视图不存在", "error");
+      return null;
+    }
+    const wasDegraded = view._degraded;
+    UI.applyViewState(view);
+    if (wasDegraded) {
+      UI.showToast("部分筛选条件已失效，已自动降级", "info");
+    }
+    return view;
+  }
+
+  function handleDeleteView(viewId) {
+    const idx = views.findIndex(v => v.id === viewId);
+    if (idx < 0) return false;
+    views.splice(idx, 1);
+    saveViews();
+    UI.updateViewSelector(views);
+    UI.showToast("视图已删除", "info");
+    return true;
+  }
+
+  function handleRenameView(viewId, newName) {
+    const view = views.find(v => v.id === viewId);
+    if (!view) return false;
+    const trimmed = (newName || "").trim();
+    if (!trimmed) {
+      UI.showToast("视图名称不能为空", "error");
+      return false;
+    }
+    view.name = trimmed;
+    view.updatedAt = new Date().toISOString();
+    saveViews();
+    UI.updateViewSelector(views);
+    UI.showToast("视图已重命名", "success");
+    return true;
+  }
+
+  function handleGetViews() {
+    return views;
   }
 
   function buildReviewFromForm(data, existingMark) {
@@ -519,6 +674,15 @@ const App = (() => {
             recordChange("measurement", "modify", m.id, m.code, beforeMeas, m);
           }
         });
+        views.forEach(v => {
+          if (v.dive === oldCode) {
+            v.dive = formData.code;
+          }
+          if (v.heatmapGroup === "dive_" + oldCode) {
+            v.heatmapGroup = "dive_" + formData.code;
+          }
+        });
+        saveViews();
         save();
         saveMeasurements();
       }
@@ -571,10 +735,17 @@ const App = (() => {
 
     recordChange("dive", "delete", diveSnapshot.id, diveSnapshot.code, diveSnapshot, null);
     dives = dives.filter((d) => d.id !== id);
+    views = validateAndDegradeViews(views);
+    const hasDegraded = views.some(v => v._degraded);
+    if (hasDegraded) {
+      views.forEach(v => delete v._degraded);
+    }
+    saveViews();
     UI.resetDiveForm();
     saveDives();
     UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
-    UI.showToast("潜次档案已删除", "info");
+    UI.updateViewSelector(views);
+    UI.showToast(hasDegraded ? "潜次档案已删除，相关视图条件已降级" : "潜次档案已删除", hasDegraded ? "info" : "info");
   }
 
   function handleSaveMeasurement(data) {
@@ -1193,7 +1364,6 @@ const App = (() => {
     if (typeof UI.hideRollbackNotice === "function") {
       UI.hideRollbackNotice();
     }
-
     MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig, baseMap);
 
     const localData = {
