@@ -791,6 +791,7 @@ const UI = (() => {
     } else if (activeTab === "measure") {
       renderMeasureTab();
     } else if (activeTab === "review") {
+      render();
       renderReviewTab();
     } else {
       render();
