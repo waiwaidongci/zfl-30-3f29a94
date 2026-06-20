@@ -1,8 +1,12 @@
 const App = (() => {
   let marks = [];
   let dives = [];
+  let measurements = [];
+  let scale = null;
+  let gridConfig = { enabled: false, size: 1, showLabels: true };
   let pending = null;
   let currentEditId = null;
+  let currentEditMeasureId = null;
 
   function getDefaultDives() {
     return [
@@ -85,6 +89,12 @@ const App = (() => {
   function init() {
     marks = DataIO.loadMarks();
     dives = DataIO.loadDives();
+    measurements = DataIO.loadMeasurements();
+    scale = DataIO.loadScale();
+    const savedGridConfig = DataIO.loadGridConfig();
+    if (savedGridConfig) {
+      gridConfig = savedGridConfig;
+    }
 
     if (!dives.length && !marks.length) {
       dives = getDefaultDives();
@@ -98,9 +108,16 @@ const App = (() => {
       save();
     }
 
+    document.addEventListener('deleteMeasurement', (e) => {
+      handleDeleteMeasurement(e.detail.id);
+    });
+
     UI.init({
       marks,
       dives,
+      measurements,
+      scale,
+      gridConfig,
       pending,
       currentEditId,
       callbacks: {
@@ -108,6 +125,10 @@ const App = (() => {
         onDeleteMark: handleDeleteMark,
         onSaveDive: handleSaveDive,
         onDeleteDive: handleDeleteDive,
+        onSaveMeasurement: handleSaveMeasurement,
+        onDeleteMeasurement: handleDeleteMeasurement,
+        onUpdateScale: handleUpdateScale,
+        onUpdateGridConfig: handleUpdateGridConfig,
         onExport: handleExport,
         onImport: handleImport,
       },
@@ -124,6 +145,18 @@ const App = (() => {
     DataIO.saveDives(dives);
   }
 
+  function saveMeasurements() {
+    DataIO.saveMeasurements(measurements);
+  }
+
+  function saveScale() {
+    DataIO.saveScale(scale);
+  }
+
+  function saveGridConfig() {
+    DataIO.saveGridConfig(gridConfig);
+  }
+
   function handleSaveMark(data, pendingPos) {
     if (data.id) {
       const mark = marks.find((m) => m.id === data.id);
@@ -138,14 +171,14 @@ const App = (() => {
       });
     }
     save();
-    UI.updateState(marks, dives, pending, data.id || null);
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, data.id || null);
   }
 
   function handleDeleteMark(id) {
     marks = marks.filter((m) => m.id !== id);
     UI.resetForm();
     save();
-    UI.updateState(marks, dives, null, null);
+    UI.updateState(marks, dives, measurements, scale, gridConfig, null, null);
   }
 
   function handleSaveDive(data) {
@@ -161,7 +194,13 @@ const App = (() => {
               m.dive = data.code;
             }
           });
+          measurements.forEach(m => {
+            if (m.dive === oldCode) {
+              m.dive = data.code;
+            }
+          });
           save();
+          saveMeasurements();
         }
       }
     } else {
@@ -172,7 +211,7 @@ const App = (() => {
     }
     saveDives();
     UI.resetDiveForm();
-    UI.updateState(marks, dives, pending, currentEditId);
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
     UI.showToast("潜次档案已保存", "success");
   }
 
@@ -181,8 +220,10 @@ const App = (() => {
     if (!dive) return;
 
     const associatedMarks = marks.filter(m => m.dive === dive.code);
-    if (associatedMarks.length > 0) {
-      if (!confirm(`该潜次关联了 ${associatedMarks.length} 个标记，删除后这些标记的潜次字段将被清空。确定删除吗？`)) {
+    const associatedMeasurements = measurements.filter(m => m.dive === dive.code);
+
+    if (associatedMarks.length > 0 || associatedMeasurements.length > 0) {
+      if (!confirm(`该潜次关联了 ${associatedMarks.length} 个标记和 ${associatedMeasurements.length} 条测距记录，删除后这些关联字段将被清空。确定删除吗？`)) {
         return;
       }
       marks.forEach(m => {
@@ -190,18 +231,74 @@ const App = (() => {
           m.dive = "";
         }
       });
+      measurements.forEach(m => {
+        if (m.dive === dive.code) {
+          m.dive = "";
+        }
+      });
       save();
+      saveMeasurements();
     }
 
     dives = dives.filter((d) => d.id !== id);
     UI.resetDiveForm();
     saveDives();
-    UI.updateState(marks, dives, pending, currentEditId);
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
     UI.showToast("潜次档案已删除", "info");
   }
 
+  function handleSaveMeasurement(data) {
+    const validation = Validation.validateMeasurement(data, 0);
+    if (!validation.valid) {
+      UI.showToast(validation.errors[0], "error");
+      return;
+    }
+
+    if (!data.points || data.points.length < 2) {
+      UI.showToast("请至少在地图上点击2个点", "error");
+      return;
+    }
+
+    if (data.id) {
+      const measurement = measurements.find((m) => m.id === data.id);
+      if (measurement) {
+        Object.assign(measurement, data);
+      }
+    } else {
+      measurements.push({
+        ...data,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+      });
+    }
+    saveMeasurements();
+    UI.resetMeasureForm();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, data.id || null);
+    UI.showToast("测距记录已保存", "success");
+  }
+
+  function handleDeleteMeasurement(id) {
+    measurements = measurements.filter((m) => m.id !== id);
+    UI.resetMeasureForm();
+    saveMeasurements();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null);
+    UI.showToast("测距记录已删除", "info");
+  }
+
+  function handleUpdateScale(newScale) {
+    scale = newScale;
+    saveScale();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
+    UI.showToast("比例尺校准成功", "success");
+  }
+
+  function handleUpdateGridConfig(newConfig) {
+    gridConfig = newConfig;
+    saveGridConfig();
+  }
+
   function handleExport() {
-    DataIO.exportFullData(marks, dives);
+    DataIO.exportFullData(marks, dives, measurements, scale, gridConfig);
   }
 
   async function handleImport() {
@@ -216,9 +313,38 @@ const App = (() => {
       }
 
       const isFullFormat = DataIO.isFullDataFormat(parsed.data);
+      const isFullFormatV3 = DataIO.isFullDataFormatV3(parsed.data);
       let comparison;
 
-      if (isFullFormat) {
+      if (isFullFormatV3) {
+        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
+        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
+        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
+
+        if (!markComparison.valid) {
+          UI.showToast(markComparison.errors[0], "error");
+          return;
+        }
+        if (!diveComparison.valid) {
+          UI.showToast(diveComparison.errors[0], "error");
+          return;
+        }
+        if (!measurementComparison.valid) {
+          UI.showToast(measurementComparison.errors[0], "error");
+          return;
+        }
+
+        comparison = {
+          isFullFormat: true,
+          isFullFormatV3: true,
+          version: parsed.data.version || "3.0",
+          marks: markComparison,
+          dives: diveComparison,
+          measurements: measurementComparison,
+          scale: parsed.data.scale,
+          gridConfig: parsed.data.gridConfig,
+        };
+      } else if (isFullFormat) {
         const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
         const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
 
@@ -233,7 +359,8 @@ const App = (() => {
 
         comparison = {
           isFullFormat: true,
-          version: parsed.data.version || "1.0",
+          isFullFormatV3: false,
+          version: parsed.data.version || "2.0",
           marks: markComparison,
           dives: diveComparison,
         };
@@ -247,6 +374,7 @@ const App = (() => {
 
         comparison = {
           isFullFormat: false,
+          isFullFormatV3: false,
           marks: markComparison,
         };
       }
@@ -268,10 +396,11 @@ const App = (() => {
   }
 
   function applyImport(comparison, resolutions) {
-    const { markResolutions, diveResolutions } = resolutions;
+    const { markResolutions, diveResolutions, measurementResolutions } = resolutions;
 
     let updatedMarks = [...marks];
     let updatedDives = [...dives];
+    let updatedMeasurements = [...measurements];
 
     if (comparison.dives) {
       const { newDives, conflicts, summary } = comparison.dives;
@@ -305,17 +434,52 @@ const App = (() => {
       }
     }
 
+    if (comparison.measurements) {
+      const { newMeasurements, conflicts, summary } = comparison.measurements;
+
+      if (conflicts.length > 0) {
+        updatedMeasurements = Validation.resolveMeasurementConflicts(
+          updatedMeasurements,
+          conflicts,
+          measurementResolutions || []
+        );
+      }
+
+      if (newMeasurements.length > 0) {
+        updatedMeasurements = Validation.addNewMeasurements(updatedMeasurements, newMeasurements);
+      }
+
+      if (comparison.scale) {
+        const scaleValidation = Validation.validateScale(comparison.scale);
+        if (scaleValidation.valid) {
+          scale = comparison.scale;
+        }
+      }
+
+      if (comparison.gridConfig) {
+        const gridValidation = Validation.validateGridConfig(comparison.gridConfig);
+        if (gridValidation.valid) {
+          gridConfig = comparison.gridConfig;
+        }
+      }
+    }
+
     marks = updatedMarks;
     dives = updatedDives;
+    measurements = updatedMeasurements;
 
     autoCreateDivesFromMarks();
 
     save();
     saveDives();
-    UI.updateState(marks, dives, pending, currentEditId);
+    saveMeasurements();
+    saveScale();
+    saveGridConfig();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
 
     const markSummary = comparison.marks?.summary;
     const diveSummary = comparison.dives?.summary;
+    const measurementSummary = comparison.measurements?.summary;
 
     let message = "导入完成：";
     let parts = [];
@@ -334,6 +498,14 @@ const App = (() => {
       if (markAdded > 0) parts.push(`标记新增 ${markAdded} 项`);
       if (markOverwritten > 0) parts.push(`标记覆盖 ${markOverwritten} 项`);
       if (markSummary.error > 0) parts.push(`标记跳过 ${markSummary.error} 项错误`);
+    }
+
+    if (measurementSummary) {
+      const measureAdded = measurementSummary.new + (measurementResolutions?.filter((r) => r === "saveas").length || 0);
+      const measureOverwritten = measurementResolutions?.filter((r) => r === "overwrite").length || 0;
+      if (measureAdded > 0) parts.push(`测距新增 ${measureAdded} 项`);
+      if (measureOverwritten > 0) parts.push(`测距覆盖 ${measureOverwritten} 项`);
+      if (measurementSummary.error > 0) parts.push(`测距跳过 ${measurementSummary.error} 项错误`);
     }
 
     UI.showToast(message + parts.join("，"), "success");

@@ -1,6 +1,9 @@
 const DataIO = (() => {
   const MARKS_STORAGE_KEY = "zfl30Marks";
   const DIVES_STORAGE_KEY = "zfl30Dives";
+  const MEASUREMENTS_STORAGE_KEY = "zfl30Measurements";
+  const SCALE_STORAGE_KEY = "zfl30Scale";
+  const GRID_STORAGE_KEY = "zfl30Grid";
 
   function loadMarks() {
     try {
@@ -28,12 +31,54 @@ const DataIO = (() => {
     localStorage.setItem(DIVES_STORAGE_KEY, JSON.stringify(dives));
   }
 
-  function exportFullData(marks, dives, filename = "dive-records.json") {
+  function loadMeasurements() {
+    try {
+      return JSON.parse(localStorage.getItem(MEASUREMENTS_STORAGE_KEY) || "[]");
+    } catch (e) {
+      console.error("Failed to load measurements:", e);
+      return [];
+    }
+  }
+
+  function saveMeasurements(measurements) {
+    localStorage.setItem(MEASUREMENTS_STORAGE_KEY, JSON.stringify(measurements));
+  }
+
+  function loadScale() {
+    try {
+      return JSON.parse(localStorage.getItem(SCALE_STORAGE_KEY) || "null");
+    } catch (e) {
+      console.error("Failed to load scale:", e);
+      return null;
+    }
+  }
+
+  function saveScale(scale) {
+    localStorage.setItem(SCALE_STORAGE_KEY, JSON.stringify(scale));
+  }
+
+  function loadGridConfig() {
+    try {
+      return JSON.parse(localStorage.getItem(GRID_STORAGE_KEY) || "null");
+    } catch (e) {
+      console.error("Failed to load grid config:", e);
+      return null;
+    }
+  }
+
+  function saveGridConfig(config) {
+    localStorage.setItem(GRID_STORAGE_KEY, JSON.stringify(config));
+  }
+
+  function exportFullData(marks, dives, measurements, scale, gridConfig, filename = "dive-records.json") {
     const data = {
-      version: "2.0",
+      version: "3.0",
       exportDate: new Date().toISOString(),
       dives: dives,
       marks: marks,
+      measurements: measurements || [],
+      scale: scale || null,
+      gridConfig: gridConfig || null,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -91,16 +136,27 @@ const DataIO = (() => {
     return data && typeof data === "object" && "dives" in data && "marks" in data;
   }
 
+  function isFullDataFormatV3(data) {
+    return isFullDataFormat(data) && "measurements" in data;
+  }
+
   return {
     loadMarks,
     saveMarks,
     loadDives,
     saveDives,
+    loadMeasurements,
+    saveMeasurements,
+    loadScale,
+    saveScale,
+    loadGridConfig,
+    saveGridConfig,
     exportFullData,
     exportMarksOnly,
     readFileAsText,
     parseJSON,
     triggerFileInput,
     isFullDataFormat,
+    isFullDataFormatV3,
   };
 })();
