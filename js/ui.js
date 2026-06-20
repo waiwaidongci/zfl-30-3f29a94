@@ -95,6 +95,13 @@ const UI = (() => {
       reviewDetailTitle: document.querySelector("#reviewDetailTitle"),
       reviewDetailContent: document.querySelector("#reviewDetailContent"),
       closeReviewDetail: document.querySelector("#closeReviewDetail"),
+      heatmapBtn: document.querySelector("#heatmapBtn"),
+      heatmapControls: document.querySelector("#heatmapControls"),
+      heatmapFilter: document.querySelector("#heatmapFilter"),
+      heatmapOpacity: document.querySelector("#heatmapOpacity"),
+      heatmapOpacityValue: document.querySelector("#heatmapOpacityValue"),
+      heatmapLegendBar: document.querySelector("#heatmapLegendBar"),
+      heatmapEmptyTip: document.querySelector("#heatmapEmptyTip"),
     };
 
     marks = deps.marks;
@@ -123,6 +130,11 @@ const UI = (() => {
     renderGrid();
     renderAttachments();
     renderStorageInfo();
+    Heatmap.init();
+    if (elements.heatmapLegendBar) {
+      elements.heatmapLegendBar.style.background = Heatmap.getGradientCSS();
+    }
+    updateHeatmapDiveFilter();
   }
 
   function initRibs() {
@@ -136,6 +148,7 @@ const UI = (() => {
 
   function bindEvents(callbacks) {
     elements.map.addEventListener("click", (event) => {
+      if (event.target.closest(".heatmap-controls")) return;
       if (isCalibrating) {
         handleCalibrateClick(event);
         return;
@@ -261,10 +274,30 @@ const UI = (() => {
 
     elements.addAttachmentBtn.onclick = handleAddAttachment;
 
-    elements.filter.onchange = render;
-    elements.diveFilter.onchange = render;
-    elements.reviewFilter.onchange = render;
+    elements.filter.onchange = () => { render(); renderHeatmap(); };
+    elements.diveFilter.onchange = () => { render(); renderHeatmap(); };
+    elements.reviewFilter.onchange = () => { render(); renderHeatmap(); };
     elements.view.onchange = render;
+
+    if (elements.heatmapBtn) {
+      elements.heatmapBtn.onclick = toggleHeatmap;
+    }
+    if (elements.heatmapFilter) {
+      elements.heatmapFilter.onchange = () => {
+        Heatmap.setState({ filterMode: elements.heatmapFilter.value });
+        renderHeatmap();
+      };
+    }
+    if (elements.heatmapOpacity) {
+      elements.heatmapOpacity.oninput = () => {
+        const val = Number(elements.heatmapOpacity.value);
+        Heatmap.setState({ opacity: val / 100 });
+        if (elements.heatmapOpacityValue) {
+          elements.heatmapOpacityValue.textContent = val + "%";
+        }
+        renderHeatmap();
+      };
+    }
 
     elements.reviewDiveFilter.onchange = renderReviewTab;
     elements.reviewTypeFilter.onchange = renderReviewTab;
@@ -305,6 +338,7 @@ const UI = (() => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         renderGrid();
+        renderHeatmap();
         if (isCalibrating) {
           renderCalibrate();
         } else if (isMeasuring) {
@@ -801,6 +835,7 @@ const UI = (() => {
     updateDiveFilter();
     updateReviewDiveFilter();
     updateMeasureDiveSelect();
+    updateHeatmapDiveFilter();
     updateScaleDisplay();
     renderGrid();
 
@@ -816,6 +851,7 @@ const UI = (() => {
       renderAttachments();
       renderStorageInfo();
     }
+    renderHeatmap();
   }
 
   function render() {
@@ -2415,6 +2451,57 @@ const UI = (() => {
         onCancel();
       }
     };
+  }
+
+  function toggleHeatmap() {
+    const enabled = Heatmap.toggle();
+    if (elements.heatmapBtn) {
+      elements.heatmapBtn.classList.toggle("heatmap-btn-active", enabled);
+      elements.heatmapBtn.textContent = enabled ? "关闭热力图" : "热力图";
+    }
+    if (elements.heatmapControls) {
+      elements.heatmapControls.classList.toggle("hidden", !enabled);
+    }
+    if (!enabled && elements.heatmapEmptyTip) {
+      elements.heatmapEmptyTip.classList.add("hidden");
+    }
+    renderHeatmap();
+  }
+
+  function renderHeatmap() {
+    if (!Heatmap.getState().enabled) return;
+    let filtered = marks;
+    if (elements.filter.value) {
+      filtered = filtered.filter((m) => m.type === elements.filter.value);
+    }
+    if (elements.diveFilter.value) {
+      filtered = filtered.filter((m) => m.dive === elements.diveFilter.value);
+    }
+    if (elements.reviewFilter.value) {
+      filtered = filtered.filter((m) => getReviewStatus(m) === elements.reviewFilter.value);
+    }
+    Heatmap.render(filtered);
+  }
+
+  function updateHeatmapDiveFilter() {
+    if (!elements.heatmapFilter) return;
+    const currentVal = elements.heatmapFilter.value;
+    const optgroupDive = elements.heatmapFilter.querySelector('optgroup[label="按潜次"]');
+    if (optgroupDive) {
+      optgroupDive.remove();
+    }
+    const newOptgroup = document.createElement("optgroup");
+    newOptgroup.label = "按潜次";
+    dives.forEach((dive) => {
+      const option = document.createElement("option");
+      option.value = "dive_" + dive.code;
+      option.textContent = dive.code;
+      newOptgroup.appendChild(option);
+    });
+    elements.heatmapFilter.appendChild(newOptgroup);
+    if (currentVal) {
+      elements.heatmapFilter.value = currentVal;
+    }
   }
 
   return {

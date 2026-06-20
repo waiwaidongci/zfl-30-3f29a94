@@ -431,9 +431,41 @@ const App = (() => {
       const isFullFormatV3 = DataIO.isFullDataFormatV3(parsed.data);
       const isFullFormatV4 = DataIO.isFullDataFormatV4(parsed.data);
       const isFullFormatV5 = DataIO.isFullDataFormatV5(parsed.data);
+      const isFullFormatV6 = DataIO.isFullDataFormatV6(parsed.data);
       let comparison;
 
-      if (isFullFormatV5) {
+      if (isFullFormatV6) {
+        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
+        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
+        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
+
+        if (!markComparison.valid) {
+          UI.showToast(markComparison.errors[0], "error");
+          return;
+        }
+        if (!diveComparison.valid) {
+          UI.showToast(diveComparison.errors[0], "error");
+          return;
+        }
+        if (!measurementComparison.valid) {
+          UI.showToast(measurementComparison.errors[0], "error");
+          return;
+        }
+
+        comparison = {
+          isFullFormat: true,
+          isFullFormatV3: true,
+          isFullFormatV4: true,
+          isFullFormatV5: true,
+          isFullFormatV6: true,
+          version: parsed.data.version || "6.0",
+          marks: markComparison,
+          dives: diveComparison,
+          measurements: measurementComparison,
+          scale: parsed.data.scale,
+          gridConfig: parsed.data.gridConfig,
+        };
+      } else if (isFullFormatV5) {
         const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
         const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
         const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);

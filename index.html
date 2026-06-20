@@ -52,12 +52,45 @@
         <button type="button" id="calibrateBtn" class="secondary">校准比例尺</button>
         <button type="button" id="gridBtn" class="secondary">显示网格</button>
         <button type="button" id="measureBtn" class="secondary">开始测距</button>
+        <button type="button" id="heatmapBtn" class="secondary">热力图</button>
         <span class="stats" id="mapStats"></span>
       </div>
       <div class="map" id="map">
         <div class="wreck"></div>
         <svg class="grid-layer" id="gridLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
         <svg class="measure-layer" id="measureLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+        <canvas class="heatmap-canvas" id="heatmapCanvas"></canvas>
+        <div class="heatmap-controls hidden" id="heatmapControls">
+          <div class="heatmap-control-row">
+            <span class="heatmap-control-label">分组</span>
+            <select id="heatmapFilter">
+              <option value="all">全部标记</option>
+              <optgroup label="按类型">
+                <option value="type_ceramic">陶片</option>
+                <option value="type_wood">木构件</option>
+                <option value="type_metal">金属件</option>
+                <option value="type_unknown">未知物</option>
+              </optgroup>
+              <optgroup label="按保存状态">
+                <option value="status_collected">采集</option>
+                <option value="status_pending">待复核</option>
+                <option value="status_confirmed">已确认</option>
+                <option value="status_revisit">需返潜</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="heatmap-control-row">
+            <span class="heatmap-control-label">透明度</span>
+            <input type="range" class="heatmap-opacity-slider" id="heatmapOpacity" min="0" max="100" value="55">
+            <span class="heatmap-opacity-value" id="heatmapOpacityValue">55%</span>
+          </div>
+          <div class="heatmap-legend">
+            <span class="heatmap-legend-label">低</span>
+            <div class="heatmap-legend-bar" id="heatmapLegendBar"></div>
+            <span class="heatmap-legend-label">高</span>
+          </div>
+        </div>
+        <div class="heatmap-empty-tip hidden" id="heatmapEmptyTip">当前筛选条件下无标记数据</div>
       </div>
     </section>
     <aside class="panel">
@@ -275,6 +308,7 @@
   </main>
   <script src="js/dataIO.js"></script>
   <script src="js/validation.js"></script>
+  <script src="js/heatmap.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
 </body>

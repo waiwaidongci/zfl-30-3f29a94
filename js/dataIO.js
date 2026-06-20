@@ -116,7 +116,7 @@ const DataIO = (() => {
   function exportFullData(marks, dives, measurements, scale, gridConfig, filename = "dive-records.json") {
     const processedMarks = marks.map((m) => ensureReviewData(m));
     const data = {
-      version: "5.0",
+      version: "6.0",
       exportDate: new Date().toISOString(),
       dives: dives,
       marks: processedMarks,
@@ -189,7 +189,11 @@ const DataIO = (() => {
   }
 
   function isFullDataFormatV5(data) {
-    return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 5.0;
+    return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 5.0 && parseFloat(data.version) < 6.0;
+  }
+
+  function isFullDataFormatV6(data) {
+    return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 6.0;
   }
 
   function readFileAsDataURL(file) {
@@ -523,6 +527,7 @@ const DataIO = (() => {
     isFullDataFormatV3,
     isFullDataFormatV4,
     isFullDataFormatV5,
+    isFullDataFormatV6,
     getDefaultReview,
     ensureReviewData,
     generateThumbnail,
