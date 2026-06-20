@@ -631,8 +631,31 @@ const MergeModule = (() => {
       const modifiedMarks = analysis.marks.modified || [];
       const divergedMarks = analysis.marks.diverged || [];
       const deletedMarks = analysis.marks.deleted || [];
+      const positionDuplicates = analysis.marks.positionDuplicates || [];
+      const positionDuplicateImportKeys = new Set();
+
+      function getMarkIdentityKeys(mark) {
+        if (!mark) return [];
+        return [
+          mark.id ? `id:${mark.id}` : null,
+          mark.code ? `code:${mark.code}` : null,
+        ].filter(Boolean);
+      }
+
+      positionDuplicates.forEach((item) => {
+        getMarkIdentityKeys(item.importedMark || item.imported).forEach((key) => {
+          positionDuplicateImportKeys.add(key);
+        });
+      });
+
+      function isPositionDuplicateImport(mark) {
+        return getMarkIdentityKeys(mark).some((key) =>
+          positionDuplicateImportKeys.has(key)
+        );
+      }
 
       newMarks.forEach((item, idx) => {
+        if (isPositionDuplicateImport(item.imported)) return;
         const res = markResolutions?.new?.[idx] || item.resolution || "add";
         if (res === "add") {
           const exists = updatedMarks.some((m) => m.code === item.imported.code);
@@ -652,6 +675,7 @@ const MergeModule = (() => {
       });
 
       modifiedMarks.forEach((item, idx) => {
+        if (isPositionDuplicateImport(item.imported)) return;
         const res =
           markResolutions?.modified?.[idx] || item.resolution || "keep";
         if (res === "overwrite") {
@@ -682,6 +706,7 @@ const MergeModule = (() => {
       });
 
       divergedMarks.forEach((item, idx) => {
+        if (isPositionDuplicateImport(item.imported)) return;
         const res =
           markResolutions?.diverged?.[idx] || item.resolution || "saveas";
         if (res === "overwrite") {
@@ -749,7 +774,6 @@ const MergeModule = (() => {
         }
       });
 
-      const positionDuplicates = analysis.marks.positionDuplicates || [];
       positionDuplicates.forEach((item, idx) => {
         const res =
           markResolutions?.positionDuplicates?.[idx] || item.resolution || "skip";
