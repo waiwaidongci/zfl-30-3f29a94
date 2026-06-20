@@ -57,7 +57,6 @@ const UI = (() => {
 
   function bindEvents(callbacks) {
     elements.map.addEventListener("click", (event) => {
-      if (event.target !== elements.map) return;
       const rect = elements.map.getBoundingClientRect();
       pending = {
         x: Number(((event.clientX - rect.left) / rect.width * 100).toFixed(2)),
