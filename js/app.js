@@ -166,6 +166,12 @@ const App = (() => {
     }
   }
 
+  function recordChange(entityType, action, entityId, entityCode, beforeData, afterData) {
+    if (typeof MergeModule !== "undefined" && typeof MergeModule.recordChange === "function") {
+      MergeModule.recordChange(entityType, action, entityId, entityCode, beforeData, afterData);
+    }
+  }
+
   function init() {
     const shouldSeedDefaultData = ProjectManager.getAllProjects().length === 0;
     currentProject = ProjectManager.init();
@@ -174,12 +180,6 @@ const App = (() => {
     document.addEventListener('deleteMeasurement', (e) => {
       handleDeleteMeasurement(e.detail.id);
     });
-
-    function recordChange(entityType, action, entityId, entityCode, beforeData, afterData) {
-      if (typeof MergeModule !== "undefined" && typeof MergeModule.recordChange === "function") {
-        MergeModule.recordChange(entityType, action, entityId, entityCode, beforeData, afterData);
-      }
-    }
 
     callbacks = {
       onSaveMark: handleSaveMark,
