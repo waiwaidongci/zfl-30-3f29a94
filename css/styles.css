@@ -1,0 +1,47 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, "PingFang SC", sans-serif; background: #e8f2f3; color: #183035; }
+header { padding: 18px 24px; background: #fff; border-bottom: 1px solid #c9dadc; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+h1 { margin: 0; font-size: 26px; }
+h2 { font-size: 18px; margin: 16px 0 8px; }
+button { border: 0; border-radius: 8px; padding: 10px 13px; background: #1d6c78; color: #fff; font-weight: 800; cursor: pointer; }
+button.secondary { background: #64777b; }
+button.danger { background: #c0392b; }
+input, select, textarea { width: 100%; border: 1px solid #c9dadc; border-radius: 6px; padding: 9px; font: inherit; background: #fff; }
+textarea { min-height: 64px; }
+label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
+.app { display: grid; grid-template-columns: 1fr 360px; gap: 16px; padding: 16px; }
+.panel { background: #fff; border: 1px solid #c9dadc; border-radius: 8px; padding: 14px; }
+.map { position: relative; height: calc(100vh - 128px); min-height: 560px; overflow: hidden; background: radial-gradient(circle at 30% 20%, #5fa8b1, #0f5262 55%, #07333f); border-radius: 8px; border: 1px solid #0c4451; cursor: crosshair; }
+.wreck { position: absolute; left: 24%; top: 28%; width: 52%; height: 31%; border: 3px solid rgba(220,235,224,.55); border-radius: 48% 44% 42% 50%; transform: rotate(-9deg); }
+.rib { position: absolute; width: 2px; height: 36%; background: rgba(220,235,224,.35); top: 27%; transform: rotate(-9deg); }
+.marker { position: absolute; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 800; transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,.7); box-shadow: 0 4px 12px rgba(0,0,0,.35); cursor: pointer; }
+.marker.selected { outline: 4px solid rgba(255,234,124,.75); }
+.ceramic { background: #b56c38; } .wood { background: #6c4b2f; } .metal { background: #6e7880; } .unknown { background: #725ca6; }
+.toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.toolbar-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.list { display: grid; gap: 8px; max-height: 330px; overflow: auto; }
+.item { border: 1px solid #d7e4e5; border-radius: 8px; padding: 10px; cursor: pointer; }
+.item.active { border-color: #1d6c78; background: #eef8f9; }
+.timeline { display: grid; gap: 8px; max-height: 240px; overflow: auto; }
+.pill { display: inline-block; padding: 3px 8px; border: 1px solid #c9dadc; border-radius: 999px; font-size: 12px; }
+.pill-new { background: #d4edda; border-color: #28a745; color: #155724; }
+.pill-conflict { background: #fff3cd; border-color: #ffc107; color: #856404; }
+.pill-error { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+.muted { color: #5c7378; font-size: 13px; }
+.hidden { display: none !important; }
+
+.modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); display: grid; place-items: center; z-index: 1000; }
+.modal { background: #fff; border-radius: 12px; padding: 24px; max-width: 720px; width: 90%; max-height: 85vh; overflow: auto; box-shadow: 0 12px 48px rgba(0,0,0,.3); }
+.modal h2 { margin-top: 0; }
+.preview-section { margin: 16px 0; padding: 12px; border-radius: 8px; border: 1px solid #d7e4e5; }
+.preview-section h3 { margin: 0 0 8px; font-size: 16px; }
+.preview-list { display: grid; gap: 6px; max-height: 200px; overflow: auto; }
+.preview-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f5f9fa; border-radius: 6px; font-size: 14px; }
+.preview-item select { width: auto; padding: 4px 8px; }
+.conflict-actions { display: flex; gap: 6px; }
+.conflict-actions button { padding: 6px 10px; font-size: 12px; }
+.summary-bar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.summary-bar .pill { font-size: 14px; padding: 6px 12px; }
+.header-buttons { display: flex; gap: 8px; }
+
+@media (max-width: 980px) { header { display: block; } .app { grid-template-columns: 1fr; } .map { height: 560px; } }
