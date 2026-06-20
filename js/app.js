@@ -1194,7 +1194,7 @@ const App = (() => {
       UI.hideRollbackNotice();
     }
 
-    MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig);
+    MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig, baseMap);
 
     const localData = {
       marks,
@@ -1212,6 +1212,10 @@ const App = (() => {
     scale = result.scale;
     gridConfig = result.gridConfig;
 
+    if (analysis.baseMap !== undefined && analysis.baseMap !== null) {
+      baseMap = analysis.baseMap;
+    }
+
     autoCreateDivesFromMarks();
 
     save();
@@ -1219,6 +1223,7 @@ const App = (() => {
     saveMeasurements();
     saveScale();
     saveGridConfig();
+    saveBaseMap();
 
     UI.updateState(
       marks,
@@ -1228,7 +1233,8 @@ const App = (() => {
       gridConfig,
       pending,
       currentEditId,
-      currentEditMeasureId
+      currentEditMeasureId,
+      baseMap
     );
 
     const summary = analysis.summary;
@@ -1281,12 +1287,14 @@ const App = (() => {
     measurements = snapshot.measurements || [];
     scale = snapshot.scale || null;
     gridConfig = snapshot.gridConfig || { enabled: false, size: 1, showLabels: true };
+    baseMap = snapshot.baseMap !== undefined ? snapshot.baseMap : baseMap;
 
     save();
     saveDives();
     saveMeasurements();
     saveScale();
     saveGridConfig();
+    saveBaseMap();
 
     UI.updateState(
       marks,
@@ -1296,7 +1304,8 @@ const App = (() => {
       gridConfig,
       pending,
       currentEditId,
-      currentEditMeasureId
+      currentEditMeasureId,
+      baseMap
     );
 
     MergeModule.clearSnapshot();

@@ -75,7 +75,7 @@ const MergeModule = (() => {
     localStorage.removeItem(_changeLogKey());
   }
 
-  function buildExportData(marks, dives, measurements, scale, gridConfig) {
+  function buildExportData(marks, dives, measurements, scale, gridConfig, baseMap) {
     const deviceId = getDeviceId();
     const changeLog = loadChangeLog();
     const processedMarks = marks.map((m) =>
@@ -94,6 +94,7 @@ const MergeModule = (() => {
         measurements: measurements || [],
         scale: scale || null,
         gridConfig: gridConfig || null,
+        baseMap: baseMap || null,
       },
       changeLog: changeLog,
       stats: {
@@ -212,6 +213,7 @@ const MergeModule = (() => {
       },
       scale: importSnapshot.scale || null,
       gridConfig: importSnapshot.gridConfig || null,
+      baseMap: importSnapshot.baseMap || null,
       importChangeLog: importChangeLog,
     };
 
@@ -1160,7 +1162,7 @@ const MergeModule = (() => {
     return newCode;
   }
 
-  function saveSnapshot(marks, dives, measurements, scale, gridConfig) {
+  function saveSnapshot(marks, dives, measurements, scale, gridConfig, baseMap) {
     const snapshot = {
       timestamp: new Date().toISOString(),
       marks: deepClone(marks),
@@ -1168,6 +1170,7 @@ const MergeModule = (() => {
       measurements: deepClone(measurements),
       scale: scale ? deepClone(scale) : null,
       gridConfig: gridConfig ? deepClone(gridConfig) : null,
+      baseMap: baseMap ? deepClone(baseMap) : null,
     };
     localStorage.setItem(_snapshotKey(), JSON.stringify(snapshot));
     return snapshot;

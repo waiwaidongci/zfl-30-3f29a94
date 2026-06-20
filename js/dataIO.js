@@ -228,7 +228,7 @@ const DataIO = (() => {
 
   function exportOfflineMerge(marks, dives, measurements, scale, gridConfig, baseMap, filename = "dive-records-offline.json") {
     if (MergeModule && typeof MergeModule.buildExportData === "function") {
-      const data = MergeModule.buildExportData(marks, dives, measurements, scale, gridConfig);
+      const data = MergeModule.buildExportData(marks, dives, measurements, scale, gridConfig, baseMap);
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);

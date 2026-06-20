@@ -176,26 +176,36 @@ const UI = (() => {
   }
 
   function initBaseMap() {
-    const baseMapImg = document.createElement("img");
-    baseMapImg.id = "baseMapImage";
-    baseMapImg.className = "basemap-image";
-    baseMapImg.alt = "沉船平面图底图";
-    elements.map.insertBefore(baseMapImg, elements.map.firstChild);
-    elements.baseMapImage = baseMapImg;
+    const existingImg = elements.map.querySelector("#baseMapImage");
+    if (existingImg) {
+      elements.baseMapImage = existingImg;
+    } else {
+      const baseMapImg = document.createElement("img");
+      baseMapImg.id = "baseMapImage";
+      baseMapImg.className = "basemap-image";
+      baseMapImg.alt = "沉船平面图底图";
+      elements.map.insertBefore(baseMapImg, elements.map.firstChild);
+      elements.baseMapImage = baseMapImg;
+    }
 
     const toolbar = document.querySelector(".map-toolbar");
     if (toolbar) {
-      const divider = document.createElement("div");
-      divider.className = "toolbar-divider";
-      toolbar.appendChild(divider);
+      const existingBtn = toolbar.querySelector("#baseMapBtn");
+      if (existingBtn) {
+        elements.baseMapBtn = existingBtn;
+      } else {
+        const divider = document.createElement("div");
+        divider.className = "toolbar-divider";
+        toolbar.appendChild(divider);
 
-      const baseMapBtn = document.createElement("button");
-      baseMapBtn.type = "button";
-      baseMapBtn.id = "baseMapBtn";
-      baseMapBtn.className = "secondary";
-      baseMapBtn.textContent = "底图设置";
-      toolbar.appendChild(baseMapBtn);
-      elements.baseMapBtn = baseMapBtn;
+        const baseMapBtn = document.createElement("button");
+        baseMapBtn.type = "button";
+        baseMapBtn.id = "baseMapBtn";
+        baseMapBtn.className = "secondary";
+        baseMapBtn.textContent = "底图设置";
+        toolbar.appendChild(baseMapBtn);
+        elements.baseMapBtn = baseMapBtn;
+      }
     }
   }
 
@@ -213,6 +223,7 @@ const UI = (() => {
       });
       elements.map.classList.add("has-custom-basemap");
     } else {
+      elements.baseMapImage.removeAttribute("src");
       elements.baseMapImage.style.display = "none";
       if (elements.wreckEl) {
         elements.wreckEl.style.display = "block";
