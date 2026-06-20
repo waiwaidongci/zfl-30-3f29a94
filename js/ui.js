@@ -102,6 +102,7 @@ const UI = (() => {
       heatmapOpacityValue: document.querySelector("#heatmapOpacityValue"),
       heatmapLegendBar: document.querySelector("#heatmapLegendBar"),
       heatmapEmptyTip: document.querySelector("#heatmapEmptyTip"),
+      reportBtn: document.querySelector("#reportBtn"),
     };
 
     marks = deps.marks;
@@ -270,6 +271,12 @@ const UI = (() => {
         if (callbacks.onImportCSV) {
           callbacks.onImportCSV();
         }
+      };
+    }
+
+    if (elements.reportBtn) {
+      elements.reportBtn.onclick = () => {
+        showReportModal();
       };
     }
 
@@ -2553,6 +2560,178 @@ const UI = (() => {
     }
   }
 
+  function showReportModal() {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-report";
+
+    let html = "<h2>现场报告生成</h2>";
+    html += '<div class="muted" style="margin-bottom:16px;">选择报告范围后生成可打印的HTML报告，支持浏览器打印预览。</div>';
+
+    html += '<div class="report-config">';
+    html += '<div class="report-config-row">';
+    html += '<label>报告范围</label>';
+    html += '<select id="reportScope">';
+    html += '<option value="all">全部数据</option>';
+    html += '<option value="dive">按潜次筛选</option>';
+    html += '<option value="type">按类型筛选</option>';
+    html += '<option value="review">按审核状态筛选</option>';
+    html += '</select>';
+    html += '</div>';
+
+    html += '<div class="report-config-row" id="reportDiveRow" style="display:none;">';
+    html += '<label>选择潜次</label>';
+    html += '<select id="reportScopeDive">';
+    dives.forEach(d => {
+      html += '<option value="' + d.code + '">' + d.code + ' - ' + d.date + '</option>';
+    });
+    html += '</select>';
+    html += '</div>';
+
+    html += '<div class="report-config-row" id="reportTypeRow" style="display:none;">';
+    html += '<label>选择类型</label>';
+    html += '<select id="reportScopeType">';
+    Object.entries(typeNames).forEach(([key, name]) => {
+      html += '<option value="' + key + '">' + name + '</option>';
+    });
+    html += '</select>';
+    html += '</div>';
+
+    html += '<div class="report-config-row" id="reportReviewRow" style="display:none;">';
+    html += '<label>选择审核状态</label>';
+    html += '<select id="reportScopeReview">';
+    Object.entries(reviewStatusNames).forEach(([key, name]) => {
+      html += '<option value="' + key + '">' + name + '</option>';
+    });
+    html += '</select>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div id="reportPreview" class="report-preview hidden"></div>';
+
+    html += '<div class="toolbar" style="margin-top:16px">';
+    html += '<button type="button" id="generateReportBtn">生成报告</button>';
+    html += '<button type="button" id="printReportBtn" class="secondary" style="display:none;">打印报告</button>';
+    html += '<button type="button" class="secondary" id="cancelReportBtn">关闭</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const scopeSelect = modal.querySelector("#reportScope");
+    const diveRow = modal.querySelector("#reportDiveRow");
+    const typeRow = modal.querySelector("#reportTypeRow");
+    const reviewRow = modal.querySelector("#reportReviewRow");
+    const previewEl = modal.querySelector("#reportPreview");
+    const generateBtn = modal.querySelector("#generateReportBtn");
+    const printBtn = modal.querySelector("#printReportBtn");
+
+    scopeSelect.onchange = () => {
+      diveRow.style.display = scopeSelect.value === "dive" ? "" : "none";
+      typeRow.style.display = scopeSelect.value === "type" ? "" : "none";
+      reviewRow.style.display = scopeSelect.value === "review" ? "" : "none";
+      previewEl.classList.add("hidden");
+      printBtn.style.display = "none";
+    };
+
+    generateBtn.onclick = () => {
+      const options = {
+        marks,
+        dives,
+        measurements,
+        scale,
+        gridConfig,
+        scope: scopeSelect.value,
+        scopeDive: scopeSelect.value === "dive" ? modal.querySelector("#reportScopeDive").value : "",
+        scopeType: scopeSelect.value === "type" ? modal.querySelector("#reportScopeType").value : "",
+        scopeReview: scopeSelect.value === "review" ? modal.querySelector("#reportScopeReview").value : "",
+        importErrors: [],
+      };
+
+      const data = Report.aggregate(options);
+      const reportHTML = Report.renderHTML(data);
+
+      previewEl.innerHTML = reportHTML;
+      previewEl.classList.remove("hidden");
+      printBtn.style.display = "";
+    };
+
+    printBtn.onclick = () => {
+      const reportContent = previewEl.querySelector(".report-page");
+      if (!reportContent) return;
+
+      const printWindow = window.open("", "_blank");
+      printWindow.document.write('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>水下考古现场报告</title>');
+      printWindow.document.write('<style>');
+      printWindow.document.write(getReportPrintCSS());
+      printWindow.document.write('</style>');
+      printWindow.document.write('</head><body>');
+      printWindow.document.write(reportContent.innerHTML);
+      printWindow.document.write('</body></html>');
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => { printWindow.print(); }, 300);
+    };
+
+    modal.querySelector("#cancelReportBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+      }
+    };
+  }
+
+  function getReportPrintCSS() {
+    return `
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; color: #183035; padding: 24px; background: #fff; }
+      h1 { font-size: 22px; margin-bottom: 8px; color: #1d6c78; border-bottom: 2px solid #1d6c78; padding-bottom: 8px; }
+      h2 { font-size: 16px; margin: 20px 0 10px; color: #1d6c78; }
+      h3 { font-size: 14px; margin: 12px 0 6px; }
+      .report-header { margin-bottom: 20px; }
+      .report-meta { font-size: 12px; color: #5c7378; margin-top: 4px; }
+      .report-summary-cards { display: flex; gap: 12px; margin: 12px 0; }
+      .report-stat-card { flex: 1; text-align: center; padding: 12px; border: 1px solid #d7e4e5; border-radius: 6px; background: #f5fafb; }
+      .report-stat-value { font-size: 24px; font-weight: 800; color: #1d6c78; }
+      .report-stat-label { font-size: 12px; color: #5c7378; margin-top: 4px; }
+      .report-section { margin: 16px 0; padding-top: 12px; border-top: 1px solid #e1ecee; }
+      .report-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+      .report-table th, .report-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #e1ecee; }
+      .report-table th { background: #f5fafb; font-weight: 600; }
+      .pill { display: inline-block; padding: 2px 8px; border: 1px solid #c9dadc; border-radius: 999px; font-size: 12px; }
+      .pill.ceramic { background: #f5e6d8; border-color: #b56c38; color: #8b4f2a; }
+      .pill.wood { background: #e8ddd2; border-color: #6c4b2f; color: #5a3e27; }
+      .pill.metal { background: #e5e8eb; border-color: #6e7880; color: #555e65; }
+      .pill.unknown { background: #ece6f7; border-color: #725ca6; color: #5c4a8a; }
+      .pill-review-collected { background: #e3f2fd; border-color: #2196f3; color: #1565c0; border-width: 2px; font-weight: 600; }
+      .pill-review-pending { background: #fff8e1; border-color: #ffc107; color: #ff8f00; border-width: 2px; font-weight: 600; }
+      .pill-review-confirmed { background: #e8f5e9; border-color: #4caf50; color: #2e7d32; border-width: 2px; font-weight: 600; }
+      .pill-review-revisit { background: #fce4ec; border-color: #e91e63; color: #c2185b; border-width: 2px; font-weight: 600; }
+      .report-map-overview { text-align: center; margin: 12px 0; }
+      .report-map-overview svg { max-width: 100%; height: auto; border: 1px solid #d7e4e5; border-radius: 6px; }
+      .report-map-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+      .report-legend-title { font-weight: 600; margin-right: 4px; }
+      .report-legend-item { display: flex; align-items: center; gap: 4px; }
+      .report-dive-block { margin: 12px 0; padding: 12px; border: 1px solid #d7e4e5; border-radius: 6px; page-break-inside: avoid; }
+      .report-dive-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
+      .report-dive-objective { padding: 8px; background: #f5fafb; border-radius: 4px; margin: 8px 0; font-size: 13px; line-height: 1.5; }
+      .report-scale-info { font-size: 13px; color: #5c7378; }
+      .muted { color: #5c7378; font-size: 13px; }
+      @media print {
+        body { padding: 0; }
+        .report-dive-block { page-break-inside: avoid; }
+        .report-table { page-break-inside: auto; }
+        .report-section { page-break-inside: avoid; }
+      }
+    `;
+  }
+
   return {
     init,
     updateState,
@@ -2574,6 +2753,7 @@ const UI = (() => {
     renderAttachments,
     renderStorageInfo,
     getCurrentAttachments,
+    showReportModal,
     typeNames,
     weatherNames,
     currentNames,
