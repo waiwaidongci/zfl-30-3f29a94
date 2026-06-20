@@ -92,7 +92,7 @@ const MergeModule = (() => {
       hasThumbnail: !!att.thumbnail,
       hasFullImage: !!att.fullImage,
       createdAt: att.createdAt,
-      contentHash: att.contentHash || simpleHash(att.fullImage || att.thumbnail || att.name),
+      contentHash: _computeHash(att),
     }));
     const totalSize = items.reduce((sum, i) => sum + (i.size || 0), 0);
     return {
@@ -123,7 +123,7 @@ const MergeModule = (() => {
       if (processed.attachments && Array.isArray(processed.attachments)) {
         processed.attachments = processed.attachments.map((att) => ({
           ...att,
-          contentHash: att.contentHash || simpleHash(att.fullImage || att.thumbnail || att.name),
+          contentHash: _computeHash(att),
         }));
       }
       return processed;
@@ -713,6 +713,15 @@ const MergeModule = (() => {
     return diff;
   }
 
+  function _computeHash(att) {
+    if (!att) return "";
+    if (att.contentHash) return att.contentHash;
+    const src = att.fullImage || att.thumbnail;
+    if (src) return simpleHash(src);
+    const parts = [att.name || "", att.size || 0, att.width || 0, att.height || 0].join("|");
+    return simpleHash(parts);
+  }
+
   function analyzeAttachments(localAttachments, importAttachments) {
     const result = {
       new: [],
@@ -729,21 +738,37 @@ const MergeModule = (() => {
     const localByName = new Map();
     localAtts.forEach((att) => {
       if (att.id) localById.set(att.id, att);
-      if (att.name) localByName.set(att.name, att);
+      if (att.name) {
+        if (!localByName.has(att.name)) {
+          localByName.set(att.name, []);
+        }
+        localByName.get(att.name).push(att);
+      }
     });
 
     const importById = new Map();
     const importByName = new Map();
     importAtts.forEach((att) => {
       if (att.id) importById.set(att.id, att);
-      if (att.name) importByName.set(att.name, att);
+      if (att.name) {
+        if (!importByName.has(att.name)) {
+          importByName.set(att.name, []);
+        }
+        importByName.get(att.name).push(att);
+      }
     });
+
+    const matchedLocalIds = new Set();
+    const matchedLocalNames = new Set();
 
     importAtts.forEach((importAtt) => {
       const localByIdMatch = importAtt.id ? localById.get(importAtt.id) : null;
-      const localByNameMatch = importAtt.name ? localByName.get(importAtt.name) : null;
+      const localByNameMatches = importAtt.name ? (localByName.get(importAtt.name) || []) : [];
+      const localByNameMatch = localByNameMatches.find(
+        (a) => !matchedLocalNames.has(a.id || a.name)
+      ) || null;
 
-      const importHash = importAtt.contentHash || simpleHash(importAtt.fullImage || importAtt.thumbnail || importAtt.name || "");
+      const importHash = _computeHash(importAtt);
 
       if (!localByIdMatch && !localByNameMatch) {
         result.new.push({
@@ -751,8 +776,10 @@ const MergeModule = (() => {
           resolution: "add",
         });
       } else if (localByIdMatch) {
-        const localHash = localByIdMatch.contentHash || simpleHash(localByIdMatch.fullImage || localByIdMatch.thumbnail || localByIdMatch.name || "");
-        const hashSame = importHash === localHash;
+        matchedLocalIds.add(localByIdMatch.id);
+        matchedLocalNames.add(localByIdMatch.id || localByIdMatch.name);
+        const localHash = _computeHash(localByIdMatch);
+        const hashSame = localHash && importHash && localHash === importHash;
         const nameSame = localByIdMatch.name === importAtt.name;
         const angleSame = (localByIdMatch.angle || "") === (importAtt.angle || "");
         const descSame = (localByIdMatch.description || "") === (importAtt.description || "");
@@ -778,8 +805,9 @@ const MergeModule = (() => {
           });
         }
       } else if (localByNameMatch) {
-        const localHash = localByNameMatch.contentHash || simpleHash(localByNameMatch.fullImage || localByNameMatch.thumbnail || localByNameMatch.name || "");
-        const hashSame = importHash === localHash;
+        matchedLocalNames.add(localByNameMatch.id || localByNameMatch.name);
+        const localHash = _computeHash(localByNameMatch);
+        const hashSame = localHash && importHash && localHash === importHash;
         const angleSame = (localByNameMatch.angle || "") === (importAtt.angle || "");
         const descSame = (localByNameMatch.description || "") === (importAtt.description || "");
 
@@ -843,9 +871,9 @@ const MergeModule = (() => {
       }
     });
 
-    const localHash = localAtt.contentHash || simpleHash(localAtt.fullImage || localAtt.thumbnail || localAtt.name || "");
-    const importHash = importAtt.contentHash || simpleHash(importAtt.fullImage || importAtt.thumbnail || importAtt.name || "");
-    if (localHash !== importHash) {
+    const localHash = _computeHash(localAtt);
+    const importHash = _computeHash(importAtt);
+    if (localHash && importHash && localHash !== importHash) {
       diff.fields.push("content");
       diff.changed.push({
         field: "content",
@@ -900,7 +928,7 @@ const MergeModule = (() => {
     return diff;
   }
 
-  function applyAttachmentResolutions(localAttachments, attachmentAnalysis, attachmentResolutions) {
+  function applyAttachmentResolutions(localAttachments, attachmentAnalysis, attachmentResolutions, importAttachments) {
     let result = Array.isArray(localAttachments) ? [...localAttachments] : [];
     const byId = new Map();
     const byName = new Map();
@@ -911,10 +939,40 @@ const MergeModule = (() => {
 
     function updateResultArray() {
       result = result.filter(Boolean);
+      byId.clear();
+      byName.clear();
       result.forEach((att, idx) => {
         if (att.id) byId.set(att.id, { att, idx });
         if (att.name) byName.set(att.name, { att, idx });
       });
+    }
+
+    function findOrAddLocal(item) {
+      if (!item?.local) return null;
+      const localKey = item.local.id ? "id" : "name";
+      const localVal = item.local.id || item.local.name;
+      let localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+      if (!localInfo) {
+        const att = { ...item.local };
+        result.push(att);
+        updateResultArray();
+        localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+      }
+      return localInfo;
+    }
+
+    if (attachmentAnalysis?.unchanged && attachmentAnalysis.unchanged.length > 0) {
+      attachmentAnalysis.unchanged.forEach((item) => {
+        const att = item.imported || item.local;
+        if (!att) return;
+        const exists = result.some((a) =>
+          (a.id && att.id && a.id === att.id) || (a.name && att.name && a.name === att.name)
+        );
+        if (!exists) {
+          result.push({ ...att });
+        }
+      });
+      updateResultArray();
     }
 
     if (attachmentAnalysis?.new && attachmentAnalysis.new.length > 0) {
@@ -940,9 +998,12 @@ const MergeModule = (() => {
         const localVal = item.local?.id || item.local?.name;
 
         if (res === "overwrite") {
-          const localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+          let localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+          if (!localInfo) {
+            localInfo = findOrAddLocal(item);
+          }
           if (localInfo) {
-            const imported = { ...item.imported, id: item.local.id || crypto.randomUUID() };
+            const imported = { ...item.imported, id: item.local.id || localInfo.att.id || crypto.randomUUID() };
             result[localInfo.idx] = imported;
           }
         } else if (res === "keepboth") {
@@ -961,7 +1022,10 @@ const MergeModule = (() => {
         const res = attachmentResolutions?.metaChanged?.[idx] || item.resolution || "merge";
         const localKey = item.local?.id ? "id" : "name";
         const localVal = item.local?.id || item.local?.name;
-        const localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+        let localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+        if (!localInfo) {
+          localInfo = findOrAddLocal(item);
+        }
 
         if (!localInfo) return;
 
@@ -992,7 +1056,10 @@ const MergeModule = (() => {
         if (res === "delete") {
           const localKey = item.local?.id ? "id" : "name";
           const localVal = item.local?.id || item.local?.name;
-          const localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+          let localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
+          if (!localInfo) {
+            localInfo = findOrAddLocal(item);
+          }
           if (localInfo) {
             result[localInfo.idx] = null;
           }
