@@ -95,12 +95,14 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
 
 .grid-line {
   stroke: rgba(255, 255, 255, 0.15);
-  stroke-width: 1;
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
 }
 
 .grid-line-major {
   stroke: rgba(255, 255, 255, 0.25);
-  stroke-width: 1.5;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .grid-label {
@@ -115,6 +117,7 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   stroke-dasharray: 8, 4;
   fill: none;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  vector-effect: non-scaling-stroke;
 }
 
 .measure-line-saved {
@@ -122,6 +125,7 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   stroke-width: 3;
   fill: none;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  vector-effect: non-scaling-stroke;
 }
 
 .measure-point {
@@ -129,6 +133,7 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   stroke: #fff;
   stroke-width: 2;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  vector-effect: non-scaling-stroke;
 }
 
 .measure-point-saved {
@@ -136,6 +141,7 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   stroke: #fff;
   stroke-width: 2;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  vector-effect: non-scaling-stroke;
 }
 
 .measure-label {
@@ -154,6 +160,7 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   stroke: #fff;
   stroke-width: 2;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  vector-effect: non-scaling-stroke;
 }
 
 .calibrate-line {
@@ -162,6 +169,7 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   stroke-dasharray: 8, 4;
   fill: none;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  vector-effect: non-scaling-stroke;
 }
 
 .map.measuring { cursor: crosshair; }

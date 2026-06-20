@@ -217,6 +217,21 @@ const UI = (() => {
         switchTab(tab.dataset.tab);
       };
     });
+
+    let resizeTimer;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        renderGrid();
+        if (isCalibrating) {
+          renderCalibrate();
+        } else if (isMeasuring) {
+          renderMeasure();
+        } else {
+          renderMeasurements();
+        }
+      }, 150);
+    });
   }
 
   function startCalibrating() {
@@ -262,25 +277,25 @@ const UI = (() => {
     if (calibratePoints.length > 0) {
       if (calibratePoints.length === 2) {
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", calibratePoints[0].x + "%");
-        line.setAttribute("y1", calibratePoints[0].y + "%");
-        line.setAttribute("x2", calibratePoints[1].x + "%");
-        line.setAttribute("y2", calibratePoints[1].y + "%");
+        line.setAttribute("x1", calibratePoints[0].x);
+        line.setAttribute("y1", calibratePoints[0].y);
+        line.setAttribute("x2", calibratePoints[1].x);
+        line.setAttribute("y2", calibratePoints[1].y);
         line.setAttribute("class", "calibrate-line");
         svg.appendChild(line);
       }
 
       calibratePoints.forEach((point, index) => {
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("cx", point.x + "%");
-        circle.setAttribute("cy", point.y + "%");
-        circle.setAttribute("r", "6");
+        circle.setAttribute("cx", point.x);
+        circle.setAttribute("cy", point.y);
+        circle.setAttribute("r", "1.2");
         circle.setAttribute("class", "calibrate-point");
         svg.appendChild(circle);
 
         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("x", point.x + "%");
-        text.setAttribute("y", (point.y - 2) + "%");
+        text.setAttribute("x", point.x);
+        text.setAttribute("y", point.y - 1.8);
         text.setAttribute("class", "measure-label");
         text.textContent = index === 0 ? "起点" : "终点";
         svg.appendChild(text);
@@ -420,7 +435,7 @@ const UI = (() => {
     if (measurePoints.length > 0) {
       if (measurePoints.length >= 2) {
         const pathData = measurePoints.map((p, i) =>
-          (i === 0 ? "M" : "L") + p.x + "%" + p.y + "%"
+          (i === 0 ? "M" : "L") + p.x + " " + p.y
         ).join(" ");
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.setAttribute("d", pathData);
@@ -430,15 +445,15 @@ const UI = (() => {
 
       measurePoints.forEach((point, index) => {
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("cx", point.x + "%");
-        circle.setAttribute("cy", point.y + "%");
-        circle.setAttribute("r", "5");
+        circle.setAttribute("cx", point.x);
+        circle.setAttribute("cy", point.y);
+        circle.setAttribute("r", "1");
         circle.setAttribute("class", "measure-point");
         svg.appendChild(circle);
 
         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("x", point.x + "%");
-        text.setAttribute("y", (point.y - 1.5) + "%");
+        text.setAttribute("x", point.x);
+        text.setAttribute("y", point.y - 1.5);
         text.setAttribute("class", "measure-label");
         text.textContent = "P" + (index + 1);
         svg.appendChild(text);
@@ -448,8 +463,8 @@ const UI = (() => {
         const midPoint = calculateMidPoint(measurePoints);
         const length = calculateRealLength(measurePoints);
         const lengthText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        lengthText.setAttribute("x", midPoint.x + "%");
-        lengthText.setAttribute("y", (midPoint.y + 2) + "%");
+        lengthText.setAttribute("x", midPoint.x);
+        lengthText.setAttribute("y", midPoint.y + 2);
         lengthText.setAttribute("class", "measure-label");
         lengthText.textContent = length.toFixed(2) + " 米";
         svg.appendChild(lengthText);
@@ -466,22 +481,22 @@ const UI = (() => {
       const isSelected = measurement.id === currentEditMeasureId;
 
       const pathData = measurement.points.map((p, i) =>
-        (i === 0 ? "M" : "L") + p.x + "%" + p.y + "%"
+        (i === 0 ? "M" : "L") + p.x + " " + p.y
       ).join(" ");
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", pathData);
       path.setAttribute("class", "measure-line-saved");
       if (isSelected) {
         path.setAttribute("stroke", "#ffc107");
-        path.setAttribute("stroke-width", "4");
+        path.setAttribute("stroke-width", "0.4");
       }
       svg.appendChild(path);
 
       measurement.points.forEach((point, index) => {
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("cx", point.x + "%");
-        circle.setAttribute("cy", point.y + "%");
-        circle.setAttribute("r", isSelected ? "6" : "4");
+        circle.setAttribute("cx", point.x);
+        circle.setAttribute("cy", point.y);
+        circle.setAttribute("r", isSelected ? "1.2" : "0.8");
         circle.setAttribute("class", "measure-point-saved");
         if (isSelected) {
           circle.setAttribute("fill", "#ffc107");
@@ -491,8 +506,8 @@ const UI = (() => {
 
       const midPoint = calculateMidPoint(measurement.points);
       const labelText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      labelText.setAttribute("x", midPoint.x + "%");
-      labelText.setAttribute("y", (midPoint.y + 2) + "%");
+      labelText.setAttribute("x", midPoint.x);
+      labelText.setAttribute("y", midPoint.y + 2);
       labelText.setAttribute("class", "measure-label");
       labelText.textContent = measurement.code + ": " + Number(measurement.length).toFixed(2) + "m";
       svg.appendChild(labelText);
@@ -514,17 +529,17 @@ const UI = (() => {
 
     for (let x = 0; x <= 100; x += gridSizePercent) {
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("x1", x + "%");
-      line.setAttribute("y1", "0%");
-      line.setAttribute("x2", x + "%");
-      line.setAttribute("y2", "100%");
+      line.setAttribute("x1", x);
+      line.setAttribute("y1", 0);
+      line.setAttribute("x2", x);
+      line.setAttribute("y2", 100);
       line.setAttribute("class", (x % (gridSizePercent * 5) < 0.01 || x === 0) ? "grid-line-major" : "grid-line");
       svg.appendChild(line);
 
       if (gridConfig.showLabels) {
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        label.setAttribute("x", (x + 0.3) + "%");
-        label.setAttribute("y", "2%");
+        label.setAttribute("x", x + 0.3);
+        label.setAttribute("y", 2);
         label.setAttribute("class", "grid-label");
         label.textContent = ((x / gridSizePercent) * gridConfig.size).toFixed(1) + "m";
         svg.appendChild(label);
@@ -533,17 +548,17 @@ const UI = (() => {
 
     for (let y = 0; y <= 100; y += gridSizePercentY) {
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("x1", "0%");
-      line.setAttribute("y1", y + "%");
-      line.setAttribute("x2", "100%");
-      line.setAttribute("y2", y + "%");
+      line.setAttribute("x1", 0);
+      line.setAttribute("y1", y);
+      line.setAttribute("x2", 100);
+      line.setAttribute("y2", y);
       line.setAttribute("class", (y % (gridSizePercentY * 5) < 0.01 || y === 0) ? "grid-line-major" : "grid-line");
       svg.appendChild(line);
 
       if (gridConfig.showLabels) {
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        label.setAttribute("x", "0.3%");
-        label.setAttribute("y", (y + 1.5) + "%");
+        label.setAttribute("x", 0.3);
+        label.setAttribute("y", y + 1.5);
         label.setAttribute("class", "grid-label");
         label.textContent = ((y / gridSizePercentY) * gridConfig.size).toFixed(1) + "m";
         svg.appendChild(label);
