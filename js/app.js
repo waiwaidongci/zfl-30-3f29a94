@@ -9,7 +9,6 @@ const App = (() => {
   let currentEditMeasureId = null;
   let importErrors = [];
   let currentProject = null;
-  let isFirstInitialization = true;
 
   function setImportErrors(errors) {
     importErrors = errors || [];
@@ -143,9 +142,9 @@ const App = (() => {
   }
 
   function init() {
+    const shouldSeedDefaultData = ProjectManager.getAllProjects().length === 0;
     currentProject = ProjectManager.init();
-    loadProjectData(isFirstInitialization);
-    isFirstInitialization = false;
+    loadProjectData(shouldSeedDefaultData);
 
     document.addEventListener('deleteMeasurement', (e) => {
       handleDeleteMeasurement(e.detail.id);
