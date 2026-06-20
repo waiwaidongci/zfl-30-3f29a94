@@ -3,6 +3,8 @@ const UI = (() => {
   const weatherNames = { sunny: "晴", cloudy: "多云", rainy: "雨", windy: "大风", foggy: "雾" };
   const currentNames = { calm: "无流", weak: "弱流", moderate: "中流", strong: "强流" };
   const angleNames = { top: "俯视", side: "侧视", front: "正视", back: "后视", detail: "细节", overview: "全景", other: "其他" };
+  const reviewStatusNames = { collected: "采集", pending: "待复核", confirmed: "已确认", revisit: "需返潜" };
+  const REVIEW_STATUSES = ["collected", "pending", "confirmed", "revisit"];
 
   let elements = {};
   let marks = [];
@@ -31,6 +33,7 @@ const UI = (() => {
       list: document.querySelector("#list"),
       filter: document.querySelector("#filter"),
       diveFilter: document.querySelector("#diveFilter"),
+      reviewFilter: document.querySelector("#reviewFilter"),
       view: document.querySelector("#view"),
       listTitle: document.querySelector("#listTitle"),
       exportBtn: document.querySelector("#exportBtn"),
@@ -39,6 +42,7 @@ const UI = (() => {
       mapStats: document.querySelector("#mapStats"),
       tabs: document.querySelectorAll(".tab"),
       marksTab: document.querySelector("#marksTab"),
+      reviewTab: document.querySelector("#reviewTab"),
       divesTab: document.querySelector("#divesTab"),
       diveForm: document.querySelector("#diveForm"),
       diveList: document.querySelector("#diveList"),
@@ -65,6 +69,22 @@ const UI = (() => {
       attachmentsList: document.querySelector("#attachmentsList"),
       attachmentsEmpty: document.querySelector("#attachmentsEmpty"),
       storageInfo: document.querySelector("#storageInfo"),
+      reviewStats: document.querySelector("#reviewStats"),
+      reviewDiveFilter: document.querySelector("#reviewDiveFilter"),
+      reviewTypeFilter: document.querySelector("#reviewTypeFilter"),
+      reviewBoard: document.querySelector("#reviewBoard"),
+      cardsCollected: document.querySelector("#cards-collected"),
+      cardsPending: document.querySelector("#cards-pending"),
+      cardsConfirmed: document.querySelector("#cards-confirmed"),
+      cardsRevisit: document.querySelector("#cards-revisit"),
+      countCollected: document.querySelector("#count-collected"),
+      countPending: document.querySelector("#count-pending"),
+      countConfirmed: document.querySelector("#count-confirmed"),
+      countRevisit: document.querySelector("#count-revisit"),
+      reviewDetail: document.querySelector("#reviewDetail"),
+      reviewDetailTitle: document.querySelector("#reviewDetailTitle"),
+      reviewDetailContent: document.querySelector("#reviewDetailContent"),
+      closeReviewDetail: document.querySelector("#closeReviewDetail"),
     };
 
     marks = deps.marks;
@@ -87,6 +107,7 @@ const UI = (() => {
     bindEvents(callbacks);
     updateDiveSelect();
     updateDiveFilter();
+    updateReviewDiveFilter();
     updateScaleDisplay();
     updateMeasureDiveSelect();
     renderGrid();
@@ -224,7 +245,36 @@ const UI = (() => {
 
     elements.filter.onchange = render;
     elements.diveFilter.onchange = render;
+    elements.reviewFilter.onchange = render;
     elements.view.onchange = render;
+
+    elements.reviewDiveFilter.onchange = renderReviewTab;
+    elements.reviewTypeFilter.onchange = renderReviewTab;
+    if (elements.closeReviewDetail) {
+      elements.closeReviewDetail.onclick = () => {
+        elements.reviewDetail.classList.add("hidden");
+      };
+    }
+
+    window.handleKanbanDragOver = (e) => {
+      e.preventDefault();
+      e.currentTarget.classList.add("drag-over");
+    };
+
+    window.handleKanbanDrop = (e, newStatus) => {
+      e.preventDefault();
+      e.currentTarget.classList.remove("drag-over");
+      const markId = e.dataTransfer.getData("text/mark-id");
+      if (markId) {
+        handleStatusChange(markId, newStatus);
+      }
+    };
+
+    document.addEventListener("dragleave", (e) => {
+      if (e.target.classList && e.target.classList.contains("review-column")) {
+        e.target.classList.remove("drag-over");
+      }
+    });
 
     elements.tabs.forEach(tab => {
       tab.onclick = () => {
@@ -667,12 +717,15 @@ const UI = (() => {
     activeTab = tab;
     elements.tabs.forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     elements.marksTab.classList.toggle("hidden", tab !== "marks");
+    elements.reviewTab.classList.toggle("hidden", tab !== "review");
     elements.divesTab.classList.toggle("hidden", tab !== "dives");
     elements.measureTab.classList.toggle("hidden", tab !== "measure");
     if (tab === "dives") {
       renderDives();
     } else if (tab === "measure") {
       renderMeasureTab();
+    } else if (tab === "review") {
+      renderReviewTab();
     } else {
       render();
       renderAttachments();
@@ -701,6 +754,21 @@ const UI = (() => {
     });
   }
 
+  function updateReviewDiveFilter() {
+    if (!elements.reviewDiveFilter) return;
+    elements.reviewDiveFilter.innerHTML = '<option value="">全部潜次</option>';
+    dives.forEach(dive => {
+      const option = document.createElement("option");
+      option.value = dive.code;
+      option.textContent = dive.code + " - " + dive.date;
+      elements.reviewDiveFilter.appendChild(option);
+    });
+  }
+
+  function getReviewStatus(mark) {
+    return mark.review?.status || "collected";
+  }
+
   function updateState(newMarks, newDives, newMeasurements, newScale, newGridConfig, newPending, newCurrentEditId, newCurrentEditMeasureId) {
     marks = newMarks;
     dives = newDives;
@@ -713,6 +781,7 @@ const UI = (() => {
 
     updateDiveSelect();
     updateDiveFilter();
+    updateReviewDiveFilter();
     updateMeasureDiveSelect();
     updateScaleDisplay();
     renderGrid();
@@ -721,6 +790,8 @@ const UI = (() => {
       renderDives();
     } else if (activeTab === "measure") {
       renderMeasureTab();
+    } else if (activeTab === "review") {
+      renderReviewTab();
     } else {
       render();
       renderAttachments();
@@ -738,20 +809,33 @@ const UI = (() => {
     if (elements.diveFilter.value) {
       filtered = filtered.filter((m) => m.dive === elements.diveFilter.value);
     }
+    if (elements.reviewFilter.value) {
+      filtered = filtered.filter((m) => getReviewStatus(m) === elements.reviewFilter.value);
+    }
 
     const totalVisible = filtered.length;
     const diveInfo = elements.diveFilter.value
       ? " · 潜次: " + elements.diveFilter.value
       : "";
-    elements.mapStats.textContent = `显示 ${totalVisible} 个标记` + diveInfo;
+    const reviewInfo = elements.reviewFilter.value
+      ? " · 状态: " + reviewStatusNames[elements.reviewFilter.value]
+      : "";
+    elements.mapStats.textContent = `显示 ${totalVisible} 个标记` + diveInfo + reviewInfo;
 
     filtered.forEach((mark) => {
+      const status = getReviewStatus(mark);
       const el = document.createElement("button");
       el.className =
-        "marker " + mark.type + (mark.id === currentEditId ? " selected" : "");
+        "marker " + mark.type + " review-status-" + status + (mark.id === currentEditId ? " selected" : "");
       el.style.left = mark.x + "%";
       el.style.top = mark.y + "%";
       el.textContent = mark.code.slice(0, 2);
+      el.title = mark.code + " [" + reviewStatusNames[status] + "]";
+      el.setAttribute("draggable", "true");
+      el.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/mark-id", mark.id);
+        e.dataTransfer.effectAllowed = "move";
+      });
       el.onclick = (event) => {
         event.stopPropagation();
         edit(mark.id);
@@ -761,10 +845,11 @@ const UI = (() => {
 
     if (pending) {
       const pendingEl = document.createElement("button");
-      pendingEl.className = "marker unknown selected";
+      pendingEl.className = "marker unknown selected review-status-collected";
       pendingEl.style.left = pending.x + "%";
       pendingEl.style.top = pending.y + "%";
       pendingEl.textContent = "?";
+      pendingEl.title = "新标记 [采集]";
       pendingEl.onclick = (e) => e.stopPropagation();
       elements.map.appendChild(pendingEl);
     }
@@ -790,6 +875,8 @@ const UI = (() => {
           const attBadge = attCount > 0 
             ? '<span class="attachment-badge" title="' + attCount + '个附件">📷 ' + attCount + '</span>' 
             : '';
+          const status = getReviewStatus(m);
+          const statusBadge = '<span class="pill pill-review pill-review-' + status + '">' + reviewStatusNames[status] + '</span>';
           return '<div class="item ' +
             (m.id === currentEditId ? "active" : "") +
             '" data-id="' +
@@ -798,7 +885,7 @@ const UI = (() => {
             m.code +
             '</b> <span class="pill">' +
             typeNames[m.type] +
-            '</span>' + attBadge + '</div><div class="muted">' +
+            '</span>' + statusBadge + attBadge + '</div><div class="muted">' +
             m.dive +
             " · " +
             m.depth +
@@ -967,6 +1054,301 @@ const UI = (() => {
     elements.diveDetail.classList.remove("hidden");
   }
 
+  function renderReviewTab() {
+    renderReviewStats();
+    renderReviewCards();
+  }
+
+  function renderReviewStats() {
+    if (!elements.reviewStats) return;
+    const counts = { collected: 0, pending: 0, confirmed: 0, revisit: 0 };
+    marks.forEach((m) => {
+      const s = getReviewStatus(m);
+      if (counts[s] !== undefined) counts[s]++;
+    });
+    const total = marks.length;
+    const confirmedRate = total > 0 ? ((counts.confirmed / total) * 100).toFixed(1) : 0;
+
+    let html = '<div class="stats-grid">';
+    html += '<div class="stat-card"><div class="stat-value">' + total + '</div><div class="stat-label">标记总数</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + counts.collected + '</div><div class="stat-label">采集</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + counts.pending + '</div><div class="stat-label">待复核</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + confirmedRate + '%</div><div class="stat-label">已确认率</div></div>';
+    html += '</div>';
+
+    elements.reviewStats.innerHTML = html;
+  }
+
+  function getFilteredReviewMarks() {
+    let filtered = marks;
+    if (elements.reviewDiveFilter && elements.reviewDiveFilter.value) {
+      filtered = filtered.filter((m) => m.dive === elements.reviewDiveFilter.value);
+    }
+    if (elements.reviewTypeFilter && elements.reviewTypeFilter.value) {
+      filtered = filtered.filter((m) => m.type === elements.reviewTypeFilter.value);
+    }
+    return filtered;
+  }
+
+  function renderReviewCards() {
+    const filtered = getFilteredReviewMarks();
+    const byStatus = { collected: [], pending: [], confirmed: [], revisit: [] };
+    filtered.forEach((m) => {
+      const s = getReviewStatus(m);
+      if (byStatus[s]) byStatus[s].push(m);
+    });
+
+    REVIEW_STATUSES.forEach((status) => {
+      const countEl = elements["count" + status.charAt(0).toUpperCase() + status.slice(1)];
+      const cardsEl = elements["cards" + status.charAt(0).toUpperCase() + status.slice(1)];
+      if (countEl) countEl.textContent = byStatus[status].length;
+      if (cardsEl) cardsEl.innerHTML = byStatus[status].map((m) => buildReviewCard(m)).join("");
+    });
+
+    bindReviewCardEvents();
+  }
+
+  function buildReviewCard(mark) {
+    const status = getReviewStatus(mark);
+    const attCount = mark.attachments ? mark.attachments.length : 0;
+    const comment = mark.review?.comment || "";
+    const shortComment = comment.length > 30 ? comment.slice(0, 30) + "..." : comment;
+
+    let statusButtons = "";
+    REVIEW_STATUSES.forEach((s) => {
+      if (s !== status) {
+        statusButtons += '<button type="button" class="secondary small review-status-btn" data-action="status" data-status="' + s + '" data-id="' + mark.id + '" title="设为' + reviewStatusNames[s] + '">' + reviewStatusNames[s] + '</button>';
+      }
+    });
+
+    return '<div class="review-card review-card-' + status + '" draggable="true" data-id="' + mark.id + '">' +
+      '<div class="review-card-header">' +
+      '<b>' + mark.code + '</b>' +
+      '<span class="pill ' + mark.type + '">' + typeNames[mark.type] + '</span>' +
+      (attCount > 0 ? '<span class="attachment-badge">📷 ' + attCount + '</span>' : '') +
+      '</div>' +
+      '<div class="review-card-info">' +
+      '<span class="muted">' + mark.dive + ' · ' + mark.depth + '</span>' +
+      '</div>' +
+      (shortComment ? '<div class="review-card-comment" title="' + comment.replace(/"/g, '&quot;') + '">' + shortComment + '</div>' : '') +
+      '<div class="review-card-actions">' +
+      '<button type="button" class="secondary small" data-action="edit" data-id="' + mark.id + '">编辑</button>' +
+      '<button type="button" class="secondary small" data-action="detail" data-id="' + mark.id + '">详情</button>' +
+      '</div>' +
+      '<div class="review-card-status-actions">' + statusButtons + '</div>' +
+      '</div>';
+  }
+
+  function bindReviewCardEvents() {
+    document.querySelectorAll(".review-card").forEach((card) => {
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/mark-id", card.dataset.id);
+        e.dataTransfer.effectAllowed = "move";
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+      });
+    });
+
+    document.querySelectorAll(".review-card [data-action]").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+        if (action === "edit") {
+          switchTab("marks");
+          edit(id);
+        } else if (action === "detail") {
+          showReviewDetail(id);
+        } else if (action === "status") {
+          handleStatusChange(id, btn.dataset.status);
+        }
+      };
+    });
+
+    document.querySelectorAll(".review-card").forEach((card) => {
+      card.onclick = () => showReviewDetail(card.dataset.id);
+    });
+  }
+
+  function handleStatusChange(markId, newStatus) {
+    const mark = marks.find((m) => m.id === markId);
+    if (!mark) return;
+    const oldStatus = getReviewStatus(mark);
+    if (oldStatus === newStatus) return;
+
+    showStatusChangeModal(mark, oldStatus, newStatus);
+  }
+
+  function showStatusChangeModal(mark, oldStatus, newStatus) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-review";
+
+    let html = "<h2>变更审核状态</h2>";
+    html += '<div class="review-change-info">';
+    html += '<div><span class="muted">标记</span><div><b>' + mark.code + '</b> · ' + typeNames[mark.type] + '</div></div>';
+    html += '<div class="review-change-status">';
+    html += '<span class="pill pill-review pill-review-' + oldStatus + '">' + reviewStatusNames[oldStatus] + '</span>';
+    html += '<span class="review-arrow">→</span>';
+    html += '<span class="pill pill-review pill-review-' + newStatus + '">' + reviewStatusNames[newStatus] + '</span>';
+    html += '</div>';
+    html += '</div>';
+    html += '<label>复核意见</label>';
+    html += '<textarea id="statusChangeComment" placeholder="请输入复核意见..."></textarea>';
+    html += '<label>审核人</label>';
+    html += '<input id="statusChangeReviewer" placeholder="例如：李教授" value="' + (mark.review?.reviewer || "") + '">';
+    html += '<div class="toolbar" style="margin-top:16px">';
+    html += '<button type="button" id="confirmStatusChangeBtn">确认变更</button>';
+    html += '<button type="button" class="secondary" id="cancelStatusChangeBtn">取消</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    modal.querySelector("#cancelStatusChangeBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
+
+    modal.querySelector("#confirmStatusChangeBtn").onclick = () => {
+      const comment = modal.querySelector("#statusChangeComment").value.trim();
+      const reviewer = modal.querySelector("#statusChangeReviewer").value.trim();
+      document.body.removeChild(backdrop);
+      applyStatusChange(mark.id, newStatus, comment, reviewer);
+    };
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) document.body.removeChild(backdrop);
+    };
+  }
+
+  function applyStatusChange(markId, newStatus, comment, reviewer) {
+    if (callbacks.onUpdateReviewStatus) {
+      callbacks.onUpdateReviewStatus(markId, newStatus, comment, reviewer);
+    }
+  }
+
+  function showReviewDetail(id) {
+    const mark = marks.find((m) => m.id === id);
+    if (!mark || !elements.reviewDetail || !elements.reviewDetailContent) return;
+
+    const status = getReviewStatus(mark);
+    elements.reviewDetailTitle.textContent = mark.code + " - 审核详情";
+
+    let html = '<div class="detail-section">';
+    html += '<h3>基本信息</h3>';
+    html += '<div class="detail-grid">';
+    html += '<div><span class="muted">编号</span><div><b>' + mark.code + '</b></div></div>';
+    html += '<div><span class="muted">类型</span><div><span class="pill ' + mark.type + '">' + typeNames[mark.type] + '</span></div></div>';
+    html += '<div><span class="muted">潜次</span><div>' + mark.dive + '</div></div>';
+    html += '<div><span class="muted">深度</span><div>' + mark.depth + '</div></div>';
+    html += '<div><span class="muted">审核状态</span><div><span class="pill pill-review pill-review-' + status + '">' + reviewStatusNames[status] + '</span></div></div>';
+    html += '<div><span class="muted">审核人</span><div>' + (mark.review?.reviewer || "未指定") + '</div></div>';
+    html += '</div></div>';
+
+    html += '<div class="detail-section">';
+    html += '<h3>标记信息</h3>';
+    if (mark.orientation) html += '<div><span class="muted">朝向</span><div>' + mark.orientation + '</div></div>';
+    if (mark.condition) html += '<div><span class="muted">保存状态</span><div>' + mark.condition + '</div></div>';
+    if (mark.note) html += '<div><span class="muted">备注</span><div>' + mark.note + '</div></div>';
+    html += '</div>';
+
+    html += '<div class="detail-section">';
+    html += '<h3>复核意见</h3>';
+    if (mark.review?.comment) {
+      html += '<div class="objective-text">' + mark.review.comment + '</div>';
+    } else {
+      html += '<div class="muted">暂无复核意见</div>';
+    }
+    html += '</div>';
+
+    if (mark.review?.history && mark.review.history.length > 0) {
+      html += '<div class="detail-section">';
+      html += '<h3>状态变更历史</h3>';
+      html += '<div class="review-history">';
+      mark.review.history.slice().reverse().forEach((h, idx) => {
+        const dateStr = h.at ? new Date(h.at).toLocaleString("zh-CN") : "-";
+        html += '<div class="review-history-item">';
+        html += '<div class="review-history-header">';
+        html += '<span class="pill pill-review pill-review-' + h.status + '">' + reviewStatusNames[h.status] + '</span>';
+        html += '<span class="muted small">' + dateStr + '</span>';
+        html += '</div>';
+        if (h.reviewer) html += '<div class="small">审核人: ' + h.reviewer + '</div>';
+        if (h.comment) html += '<div class="small muted">' + h.comment + '</div>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
+
+    html += '<div class="toolbar">';
+    html += '<button type="button" id="reviewDetailEditBtn">编辑标记</button>';
+    html += '<button type="button" class="secondary" id="reviewDetailChangeBtn">变更状态</button>';
+    html += '</div>';
+
+    elements.reviewDetailContent.innerHTML = html;
+    elements.reviewDetail.classList.remove("hidden");
+
+    const editBtn = elements.reviewDetailContent.querySelector("#reviewDetailEditBtn");
+    if (editBtn) editBtn.onclick = () => { switchTab("marks"); edit(id); };
+    const changeBtn = elements.reviewDetailContent.querySelector("#reviewDetailChangeBtn");
+    if (changeBtn) changeBtn.onclick = () => {
+      const modal = document.createElement("div");
+      showStatusChangeModal2(id);
+    };
+  }
+
+  function showStatusChangeModal2(markId) {
+    const mark = marks.find((m) => m.id === markId);
+    if (!mark) return;
+    const currentStatus = getReviewStatus(mark);
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "modal modal-review";
+
+    let html = "<h2>变更审核状态</h2>";
+    html += '<div class="review-change-info">';
+    html += '<div><span class="muted">标记</span><div><b>' + mark.code + '</b> · ' + typeNames[mark.type] + '</div></div>';
+    html += '<div><span class="muted">当前状态</span><div><span class="pill pill-review pill-review-' + currentStatus + '">' + reviewStatusNames[currentStatus] + '</span></div></div>';
+    html += '</div>';
+    html += '<label>新状态</label>';
+    html += '<select id="statusSelect">';
+    REVIEW_STATUSES.forEach((s) => {
+      html += '<option value="' + s + '"' + (s === currentStatus ? ' selected' : '') + '>' + reviewStatusNames[s] + '</option>';
+    });
+    html += '</select>';
+    html += '<label>复核意见</label>';
+    html += '<textarea id="statusChangeComment" placeholder="请输入复核意见...">' + (mark.review?.comment || "") + '</textarea>';
+    html += '<label>审核人</label>';
+    html += '<input id="statusChangeReviewer" placeholder="例如：李教授" value="' + (mark.review?.reviewer || "") + '">';
+    html += '<div class="toolbar" style="margin-top:16px">';
+    html += '<button type="button" id="confirmStatusChangeBtn">确认变更</button>';
+    html += '<button type="button" class="secondary" id="cancelStatusChangeBtn">取消</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    modal.querySelector("#cancelStatusChangeBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
+    modal.querySelector("#confirmStatusChangeBtn").onclick = () => {
+      const newStatus = modal.querySelector("#statusSelect").value;
+      const comment = modal.querySelector("#statusChangeComment").value.trim();
+      const reviewer = modal.querySelector("#statusChangeReviewer").value.trim();
+      document.body.removeChild(backdrop);
+      applyStatusChange(markId, newStatus, comment, reviewer);
+    };
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) document.body.removeChild(backdrop);
+    };
+  }
+
   function renderMeasureTab() {
     renderMeasureStats();
     renderMeasureList();
@@ -1071,6 +1453,15 @@ const UI = (() => {
     if (!mark) return;
     for (const [key, value] of Object.entries(mark)) {
       if (elements.form[key]) elements.form[key].value = value;
+    }
+    if (mark.review) {
+      if (elements.form.reviewStatus) elements.form.reviewStatus.value = mark.review.status || "collected";
+      if (elements.form.reviewComment) elements.form.reviewComment.value = mark.review.comment || "";
+      if (elements.form.reviewer) elements.form.reviewer.value = mark.review.reviewer || "";
+    } else {
+      if (elements.form.reviewStatus) elements.form.reviewStatus.value = "collected";
+      if (elements.form.reviewComment) elements.form.reviewComment.value = "";
+      if (elements.form.reviewer) elements.form.reviewer.value = "";
     }
     pending = { x: mark.x, y: mark.y };
     currentEditId = id;
@@ -1241,10 +1632,39 @@ const UI = (() => {
         html += "</div>";
         html += '<div class="preview-list">';
         markComparison.conflicts.forEach((conflict, idx) => {
+          const diff = conflict.reviewDiff;
+          let reviewDiffHtml = "";
+          if (diff && (diff.statusChanged || diff.commentChanged || diff.reviewerChanged)) {
+            reviewDiffHtml = '<div class="conflict-review-diff">';
+            if (diff.statusChanged) {
+              reviewDiffHtml += '<div class="review-diff-row">';
+              reviewDiffHtml += '<span class="muted small">状态:</span>';
+              reviewDiffHtml += '<span class="pill pill-review pill-review-' + diff.localStatus + '">本地:' + reviewStatusNames[diff.localStatus] + '</span>';
+              reviewDiffHtml += '<span class="review-arrow">→</span>';
+              reviewDiffHtml += '<span class="pill pill-review pill-review-' + diff.importedStatus + '">导入:' + reviewStatusNames[diff.importedStatus] + '</span>';
+              reviewDiffHtml += '</div>';
+            }
+            if (diff.commentChanged) {
+              reviewDiffHtml += '<div class="review-diff-row">';
+              reviewDiffHtml += '<span class="muted small">意见:</span>';
+              reviewDiffHtml += '<span class="conflict-local-val" title="' + (diff.localComment || '无').replace(/"/g, '&quot;') + '">本地: ' + ((diff.localComment && diff.localComment.length > 20) ? diff.localComment.slice(0, 20) + '...' : (diff.localComment || '无')) + '</span>';
+              reviewDiffHtml += '<span class="review-arrow">→</span>';
+              reviewDiffHtml += '<span class="conflict-imported-val" title="' + (diff.importedComment || '无').replace(/"/g, '&quot;') + '">导入: ' + ((diff.importedComment && diff.importedComment.length > 20) ? diff.importedComment.slice(0, 20) + '...' : (diff.importedComment || '无')) + '</span>';
+              reviewDiffHtml += '</div>';
+            }
+            if (diff.reviewerChanged) {
+              reviewDiffHtml += '<div class="review-diff-row">';
+              reviewDiffHtml += '<span class="muted small">审核人:</span>';
+              reviewDiffHtml += '<span class="conflict-local-val">本地: ' + (diff.localReviewer || '未指定') + '</span>';
+              reviewDiffHtml += '<span class="review-arrow">→</span>';
+              reviewDiffHtml += '<span class="conflict-imported-val">导入: ' + (diff.importedReviewer || '未指定') + '</span>';
+              reviewDiffHtml += '</div>';
+            }
+            reviewDiffHtml += '</div>';
+          }
           html +=
-            '<div class="preview-item" data-mark-conflict-index="' +
-            idx +
-            '"><span><b>' +
+            '<div class="preview-item preview-item-conflict" data-mark-conflict-index="' +
+            idx + '"><div class="preview-item-main"><span><b>' +
             conflict.imported.code +
             "</b> " +
             typeNames[conflict.imported.type] +
@@ -1255,7 +1675,7 @@ const UI = (() => {
           html += '<option value="keep">保留本地</option>';
           html += '<option value="overwrite">覆盖本地</option>';
           html += '<option value="saveas">另存为新编号</option>';
-          html += "</select></div>";
+          html += "</select></div>" + reviewDiffHtml + "</div>";
         });
         html += "</div>";
       }
@@ -1659,6 +2079,7 @@ const UI = (() => {
     updateState,
     render,
     renderDives,
+    renderReviewTab,
     renderMeasureTab,
     edit,
     editDive,
@@ -1676,5 +2097,7 @@ const UI = (() => {
     weatherNames,
     currentNames,
     angleNames,
+    reviewStatusNames,
+    REVIEW_STATUSES,
   };
 })();

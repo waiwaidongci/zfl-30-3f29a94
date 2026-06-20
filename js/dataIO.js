@@ -8,9 +8,49 @@ const DataIO = (() => {
   const MAX_IMAGE_SIZE_MB = 5;
   const STORAGE_WARNING_THRESHOLD = 0.8;
 
+  function getDefaultReview() {
+    return {
+      status: "collected",
+      comment: "",
+      reviewer: "",
+      reviewedAt: null,
+      history: [
+        {
+          status: "collected",
+          at: new Date().toISOString(),
+          comment: "",
+          reviewer: "",
+        },
+      ],
+    };
+  }
+
+  function ensureReviewData(mark) {
+    if (!mark.review) {
+      mark.review = getDefaultReview();
+    } else {
+      if (!mark.review.status) mark.review.status = "collected";
+      if (mark.review.comment === undefined) mark.review.comment = "";
+      if (mark.review.reviewer === undefined) mark.review.reviewer = "";
+      if (mark.review.reviewedAt === undefined) mark.review.reviewedAt = null;
+      if (!mark.review.history || !Array.isArray(mark.review.history)) {
+        mark.review.history = [
+          {
+            status: mark.review.status,
+            at: mark.review.reviewedAt || new Date().toISOString(),
+            comment: mark.review.comment,
+            reviewer: mark.review.reviewer,
+          },
+        ];
+      }
+    }
+    return mark;
+  }
+
   function loadMarks() {
     try {
-      return JSON.parse(localStorage.getItem(MARKS_STORAGE_KEY) || "[]");
+      const raw = JSON.parse(localStorage.getItem(MARKS_STORAGE_KEY) || "[]");
+      return raw.map((m) => ensureReviewData(m));
     } catch (e) {
       console.error("Failed to load marks:", e);
       return [];
@@ -74,11 +114,12 @@ const DataIO = (() => {
   }
 
   function exportFullData(marks, dives, measurements, scale, gridConfig, filename = "dive-records.json") {
+    const processedMarks = marks.map((m) => ensureReviewData(m));
     const data = {
-      version: "4.0",
+      version: "5.0",
       exportDate: new Date().toISOString(),
       dives: dives,
-      marks: marks,
+      marks: processedMarks,
       measurements: measurements || [],
       scale: scale || null,
       gridConfig: gridConfig || null,
@@ -145,6 +186,10 @@ const DataIO = (() => {
 
   function isFullDataFormatV4(data) {
     return isFullDataFormatV3(data) && data.version && parseFloat(data.version) >= 4.0;
+  }
+
+  function isFullDataFormatV5(data) {
+    return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 5.0;
   }
 
   function readFileAsDataURL(file) {
@@ -290,6 +335,9 @@ const DataIO = (() => {
     isFullDataFormat,
     isFullDataFormatV3,
     isFullDataFormatV4,
+    isFullDataFormatV5,
+    getDefaultReview,
+    ensureReviewData,
     generateThumbnail,
     getImageDimensions,
     processImageFile,

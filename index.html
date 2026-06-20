@@ -40,6 +40,13 @@
           <option value="metal">金属件</option>
           <option value="unknown">未知物</option>
         </select>
+        <select id="reviewFilter">
+          <option value="">全部状态</option>
+          <option value="collected">采集</option>
+          <option value="pending">待复核</option>
+          <option value="confirmed">已确认</option>
+          <option value="revisit">需返潜</option>
+        </select>
         <div class="toolbar-divider"></div>
         <button type="button" id="calibrateBtn" class="secondary">校准比例尺</button>
         <button type="button" id="gridBtn" class="secondary">显示网格</button>
@@ -55,6 +62,7 @@
     <aside class="panel">
       <div class="tabs">
         <button class="tab active" data-tab="marks">标记管理</button>
+        <button class="tab" data-tab="review">审核看板</button>
         <button class="tab" data-tab="dives">潜次档案</button>
         <button class="tab" data-tab="measure">测距与网格</button>
       </div>
@@ -85,6 +93,23 @@
           <label>朝向</label><input name="orientation" placeholder="例如东北偏北">
           <label>保存状态</label><input name="condition" placeholder="例如表面附着贝类">
           <label>备注</label><textarea name="note"></textarea>
+
+          <div class="review-section">
+            <div class="review-header">
+              <h2>审核信息</h2>
+            </div>
+            <label>审核状态</label>
+            <select name="reviewStatus">
+              <option value="collected">采集</option>
+              <option value="pending">待复核</option>
+              <option value="confirmed">已确认</option>
+              <option value="revisit">需返潜</option>
+            </select>
+            <label>复核意见</label>
+            <textarea name="reviewComment" placeholder="填写复核意见或返潜说明..."></textarea>
+            <label>审核人</label>
+            <input name="reviewer" placeholder="例如：李教授">
+          </div>
 
           <div class="attachments-section">
             <div class="attachments-header">
@@ -144,6 +169,63 @@
         <div id="diveDetail" class="dive-detail hidden">
           <h2>潜次详情</h2>
           <div id="diveDetailContent"></div>
+        </div>
+      </div>
+
+      <div id="reviewTab" class="tab-content hidden">
+        <div class="review-stats" id="reviewStats"></div>
+        <div class="review-toolbar">
+          <select id="reviewDiveFilter">
+            <option value="">全部潜次</option>
+          </select>
+          <select id="reviewTypeFilter">
+            <option value="">全部类型</option>
+            <option value="ceramic">陶片</option>
+            <option value="wood">木构件</option>
+            <option value="metal">金属件</option>
+            <option value="unknown">未知物</option>
+          </select>
+        </div>
+        <div class="review-board" id="reviewBoard">
+          <div class="review-column" data-status="collected" ondrop="handleKanbanDrop(event, 'collected')" ondragover="handleKanbanDragOver(event)">
+            <div class="review-column-header status-collected">
+              <span class="status-dot"></span>
+              <h3>采集</h3>
+              <span class="review-count" id="count-collected">0</span>
+            </div>
+            <div class="review-cards" id="cards-collected"></div>
+          </div>
+          <div class="review-column" data-status="pending" ondrop="handleKanbanDrop(event, 'pending')" ondragover="handleKanbanDragOver(event)">
+            <div class="review-column-header status-pending">
+              <span class="status-dot"></span>
+              <h3>待复核</h3>
+              <span class="review-count" id="count-pending">0</span>
+            </div>
+            <div class="review-cards" id="cards-pending"></div>
+          </div>
+          <div class="review-column" data-status="confirmed" ondrop="handleKanbanDrop(event, 'confirmed')" ondragover="handleKanbanDragOver(event)">
+            <div class="review-column-header status-confirmed">
+              <span class="status-dot"></span>
+              <h3>已确认</h3>
+              <span class="review-count" id="count-confirmed">0</span>
+            </div>
+            <div class="review-cards" id="cards-confirmed"></div>
+          </div>
+          <div class="review-column" data-status="revisit" ondrop="handleKanbanDrop(event, 'revisit')" ondragover="handleKanbanDragOver(event)">
+            <div class="review-column-header status-revisit">
+              <span class="status-dot"></span>
+              <h3>需返潜</h3>
+              <span class="review-count" id="count-revisit">0</span>
+            </div>
+            <div class="review-cards" id="cards-revisit"></div>
+          </div>
+        </div>
+        <div class="review-detail hidden" id="reviewDetail">
+          <div class="review-detail-header">
+            <h3 id="reviewDetailTitle">标记详情</h3>
+            <button type="button" id="closeReviewDetail" class="secondary small">关闭</button>
+          </div>
+          <div id="reviewDetailContent"></div>
         </div>
       </div>
 

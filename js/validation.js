@@ -1,12 +1,60 @@
 const Validation = (() => {
   const MARK_REQUIRED_FIELDS = ["code", "type", "dive", "depth"];
   const VALID_TYPES = ["ceramic", "wood", "metal", "unknown"];
+  const VALID_REVIEW_STATUSES = ["collected", "pending", "confirmed", "revisit"];
   const DIVE_REQUIRED_FIELDS = ["code", "date", "leader", "visibility", "objective"];
   const VALID_WEATHER = ["sunny", "cloudy", "rainy", "windy", "foggy"];
   const VALID_CURRENT = ["calm", "weak", "moderate", "strong"];
   const MEASUREMENT_REQUIRED_FIELDS = ["code", "dive", "length", "points"];
   const ATTACHMENT_REQUIRED_FIELDS = ["id", "name", "thumbnail"];
   const VALID_ANGLES = ["top", "side", "front", "back", "detail", "overview", "other"];
+
+  function validateReview(review, index) {
+    const errors = [];
+
+    if (review === undefined || review === null) {
+      return { valid: true, errors, review };
+    }
+
+    if (typeof review !== "object" || Array.isArray(review)) {
+      errors.push("review 必须是对象");
+      return { valid: false, errors, review };
+    }
+
+    if (review.status && !VALID_REVIEW_STATUSES.includes(review.status)) {
+      errors.push(`无效的审核状态: ${review.status}，有效值为: ${VALID_REVIEW_STATUSES.join(", ")}`);
+    }
+
+    if (review.comment !== undefined && typeof review.comment !== "string") {
+      errors.push("review.comment 必须是字符串");
+    }
+
+    if (review.reviewer !== undefined && typeof review.reviewer !== "string") {
+      errors.push("review.reviewer 必须是字符串");
+    }
+
+    if (review.reviewedAt !== undefined && review.reviewedAt !== null && typeof review.reviewedAt !== "string") {
+      errors.push("review.reviewedAt 必须是字符串");
+    }
+
+    if (review.history !== undefined) {
+      if (!Array.isArray(review.history)) {
+        errors.push("review.history 必须是数组");
+      } else {
+        review.history.forEach((item, hIdx) => {
+          if (typeof item !== "object" || item === null) {
+            errors.push(`history 第 ${hIdx + 1} 项不是有效的对象`);
+          } else {
+            if (item.status && !VALID_REVIEW_STATUSES.includes(item.status)) {
+              errors.push(`history 第 ${hIdx + 1} 项: 无效的状态 ${item.status}`);
+            }
+          }
+        });
+      }
+    }
+
+    return { valid: errors.length === 0, errors, review };
+  }
 
   function validateMark(mark, index) {
     const errors = [];
@@ -44,6 +92,17 @@ const Validation = (() => {
           }
         });
       }
+    }
+
+    if (mark.review !== undefined) {
+      const reviewResult = validateReview(mark.review, index);
+      if (!reviewResult.valid) {
+        errors.push(...reviewResult.errors.map((e) => `审核信息: ${e}`));
+      }
+    }
+
+    if (DataIO && typeof DataIO.ensureReviewData === "function") {
+      mark = DataIO.ensureReviewData(mark);
     }
 
     return { valid: errors.length === 0, errors, mark };
@@ -102,6 +161,27 @@ const Validation = (() => {
     return { valid, results, total: data.length };
   }
 
+  function getReviewStatusDiff(localMark, importedMark) {
+    const localStatus = localMark.review?.status || "collected";
+    const importedStatus = importedMark.review?.status || "collected";
+    const localComment = localMark.review?.comment || "";
+    const importedComment = importedMark.review?.comment || "";
+    const localReviewer = localMark.review?.reviewer || "";
+    const importedReviewer = importedMark.review?.reviewer || "";
+
+    return {
+      statusChanged: localStatus !== importedStatus,
+      localStatus,
+      importedStatus,
+      commentChanged: localComment !== importedComment,
+      localComment,
+      importedComment,
+      reviewerChanged: localReviewer !== importedReviewer,
+      localReviewer,
+      importedReviewer,
+    };
+  }
+
   function compareMarks(localMarks, importedMarks) {
     const localByCode = new Map(localMarks.map(m => [m.code, m]));
     const newMarks = [];
@@ -132,6 +212,7 @@ const Validation = (() => {
           local: localMark,
           imported: mark,
           resolution: "keep",
+          reviewDiff: getReviewStatusDiff(localMark, mark),
         });
       } else {
         newMarks.push(mark);
@@ -224,8 +305,11 @@ const Validation = (() => {
         case "overwrite": {
           const idx = result.findIndex(m => m.code === conflict.local.code);
           if (idx !== -1) {
+            const imported = DataIO && DataIO.ensureReviewData
+              ? DataIO.ensureReviewData({ ...conflict.imported })
+              : conflict.imported;
             result[idx] = {
-              ...conflict.imported,
+              ...imported,
               id: conflict.local.id,
               x: conflict.imported.x ?? conflict.local.x,
               y: conflict.imported.y ?? conflict.local.y,
@@ -236,8 +320,11 @@ const Validation = (() => {
         case "saveas": {
           const newCode = generateNewCode(existingCodes, conflict.imported.code);
           existingCodes.add(newCode);
+          const imported = DataIO && DataIO.ensureReviewData
+            ? DataIO.ensureReviewData({ ...conflict.imported })
+            : conflict.imported;
           result.push({
-            ...conflict.imported,
+            ...imported,
             id: crypto.randomUUID(),
             code: newCode,
             x: conflict.imported.x ?? 50,
@@ -301,8 +388,11 @@ const Validation = (() => {
         code = generateNewCode(existingCodes, code);
       }
       existingCodes.add(code);
+      const processedMark = DataIO && DataIO.ensureReviewData
+        ? DataIO.ensureReviewData({ ...mark })
+        : mark;
       result.push({
-        ...mark,
+        ...processedMark,
         id: crypto.randomUUID(),
         code,
         x: mark.x ?? 50,
@@ -610,6 +700,7 @@ const Validation = (() => {
   return {
     validateMark,
     validateMarkArray,
+    validateReview,
     validateDive,
     validateDiveArray,
     validateMeasurement,
@@ -628,7 +719,9 @@ const Validation = (() => {
     addNewDives,
     addNewMeasurements,
     generateNewCode,
+    getReviewStatusDiff,
     VALID_TYPES,
+    VALID_REVIEW_STATUSES,
     VALID_WEATHER,
     VALID_CURRENT,
     VALID_ANGLES,

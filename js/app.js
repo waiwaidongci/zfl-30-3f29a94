@@ -33,6 +33,23 @@ const App = (() => {
     ];
   }
 
+  function getDefaultReview(status = "collected") {
+    return {
+      status: status,
+      comment: "",
+      reviewer: "",
+      reviewedAt: status === "collected" ? null : new Date().toISOString(),
+      history: [
+        {
+          status: status,
+          at: new Date().toISOString(),
+          comment: "",
+          reviewer: "",
+        },
+      ],
+    };
+  }
+
   function getDefaultMarks() {
     return [
       {
@@ -46,6 +63,7 @@ const App = (() => {
         orientation: "东",
         condition: "边缘残缺",
         note: "靠近船肋",
+        review: getDefaultReview("collected"),
       },
       {
         id: crypto.randomUUID(),
@@ -58,6 +76,7 @@ const App = (() => {
         orientation: "西北",
         condition: "稳定",
         note: "疑似横梁",
+        review: getDefaultReview("pending"),
       },
     ];
   }
@@ -131,6 +150,7 @@ const App = (() => {
         onUpdateGridConfig: handleUpdateGridConfig,
         onExport: handleExport,
         onImport: handleImport,
+        onUpdateReviewStatus: handleUpdateReviewStatus,
       },
     });
 
@@ -162,27 +182,110 @@ const App = (() => {
     DataIO.saveGridConfig(gridConfig);
   }
 
+  function buildReviewFromForm(data, existingMark) {
+    const newStatus = data.reviewStatus || "collected";
+    const comment = data.reviewComment || "";
+    const reviewer = data.reviewer || "";
+    const now = new Date().toISOString();
+
+    if (existingMark && existingMark.review) {
+      const oldStatus = existingMark.review.status || "collected";
+      const updatedReview = {
+        ...existingMark.review,
+        status: newStatus,
+        comment: comment,
+        reviewer: reviewer,
+        reviewedAt: newStatus !== "collected" ? now : null,
+      };
+      if (!updatedReview.history) {
+        updatedReview.history = [{ status: oldStatus, at: now, comment, reviewer }];
+      }
+      const lastHistory = updatedReview.history[updatedReview.history.length - 1];
+      if (lastHistory.status !== newStatus || lastHistory.comment !== comment || lastHistory.reviewer !== reviewer) {
+        updatedReview.history.push({ status: newStatus, at: now, comment, reviewer });
+      }
+      return updatedReview;
+    } else {
+      return {
+        status: newStatus,
+        comment: comment,
+        reviewer: reviewer,
+        reviewedAt: newStatus !== "collected" ? now : null,
+        history: [{ status: newStatus, at: now, comment, reviewer }],
+      };
+    }
+  }
+
   function handleSaveMark(data, pendingPos) {
     const attachments = data.attachments || [];
     delete data.attachments;
+
+    const reviewStatus = data.reviewStatus;
+    const reviewComment = data.reviewComment;
+    const reviewer = data.reviewer;
+    delete data.reviewStatus;
+    delete data.reviewComment;
+    delete data.reviewer;
 
     if (data.id) {
       const mark = marks.find((m) => m.id === data.id);
       if (mark) {
         Object.assign(mark, data, pendingPos);
         mark.attachments = attachments;
+        mark.review = buildReviewFromForm(
+          { reviewStatus, reviewComment, reviewer },
+          mark
+        );
       }
     } else {
-      marks.push({
+      const newMark = {
         ...data,
         id: crypto.randomUUID(),
         ...pendingPos,
         attachments: attachments,
-      });
+      };
+      newMark.review = buildReviewFromForm(
+        { reviewStatus, reviewComment, reviewer },
+        null
+      );
+      marks.push(newMark);
     }
     save();
     UI.updateState(marks, dives, measurements, scale, gridConfig, pending, data.id || null);
     UI.showToast("标记已保存", "success");
+  }
+
+  function handleUpdateReviewStatus(markId, newStatus, comment, reviewer) {
+    const mark = marks.find((m) => m.id === markId);
+    if (!mark) return;
+
+    if (!mark.review) {
+      mark.review = DataIO.getDefaultReview ? DataIO.getDefaultReview() : getDefaultReview();
+    }
+
+    const oldStatus = mark.review.status || "collected";
+    const now = new Date().toISOString();
+
+    mark.review.status = newStatus;
+    mark.review.comment = comment || mark.review.comment || "";
+    mark.review.reviewer = reviewer || mark.review.reviewer || "";
+    mark.review.reviewedAt = newStatus !== "collected" ? now : null;
+
+    if (!mark.review.history || !Array.isArray(mark.review.history)) {
+      mark.review.history = [
+        { status: oldStatus, at: now, comment: mark.review.comment, reviewer: mark.review.reviewer },
+      ];
+    }
+    mark.review.history.push({
+      status: newStatus,
+      at: now,
+      comment: mark.review.comment,
+      reviewer: mark.review.reviewer,
+    });
+
+    save();
+    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, markId);
+    UI.showToast(`状态已变更为「${UI.reviewStatusNames[newStatus]}」`, "success");
   }
 
   function handleDeleteMark(id) {
@@ -326,9 +429,10 @@ const App = (() => {
       const isFullFormat = DataIO.isFullDataFormat(parsed.data);
       const isFullFormatV3 = DataIO.isFullDataFormatV3(parsed.data);
       const isFullFormatV4 = DataIO.isFullDataFormatV4(parsed.data);
+      const isFullFormatV5 = DataIO.isFullDataFormatV5(parsed.data);
       let comparison;
 
-      if (isFullFormatV4) {
+      if (isFullFormatV5) {
         const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
         const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
         const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
@@ -350,6 +454,37 @@ const App = (() => {
           isFullFormat: true,
           isFullFormatV3: true,
           isFullFormatV4: true,
+          isFullFormatV5: true,
+          version: parsed.data.version || "5.0",
+          marks: markComparison,
+          dives: diveComparison,
+          measurements: measurementComparison,
+          scale: parsed.data.scale,
+          gridConfig: parsed.data.gridConfig,
+        };
+      } else if (isFullFormatV4) {
+        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
+        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
+        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
+
+        if (!markComparison.valid) {
+          UI.showToast(markComparison.errors[0], "error");
+          return;
+        }
+        if (!diveComparison.valid) {
+          UI.showToast(diveComparison.errors[0], "error");
+          return;
+        }
+        if (!measurementComparison.valid) {
+          UI.showToast(measurementComparison.errors[0], "error");
+          return;
+        }
+
+        comparison = {
+          isFullFormat: true,
+          isFullFormatV3: true,
+          isFullFormatV4: true,
+          isFullFormatV5: false,
           version: parsed.data.version || "4.0",
           marks: markComparison,
           dives: diveComparison,
