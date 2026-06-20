@@ -147,6 +147,23 @@ label { display: block; margin: 9px 0 5px; color: #5c7378; font-size: 13px; }
   vector-effect: non-scaling-stroke;
 }
 
+.measure-line-original {
+  stroke: #6c757d;
+  stroke-width: 2.5;
+  stroke-dasharray: 6, 6;
+  fill: none;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.measure-point-original {
+  fill: #6c757d;
+  stroke: #fff;
+  stroke-width: 1.5;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
 .measure-point {
   fill: #ffc107;
   stroke: #fff;

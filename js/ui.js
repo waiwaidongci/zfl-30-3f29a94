@@ -28,6 +28,7 @@ const UI = (() => {
   let selectedRelatedMarks = [];
   let importErrors = [];
   let currentProject = null;
+  let remeasureOriginal = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -572,6 +573,7 @@ const UI = (() => {
     isMeasuring = false;
     measurePoints = [];
     selectedRelatedMarks = [];
+    remeasureOriginal = null;
     elements.map.classList.remove("measuring");
     elements.measureBtn.textContent = "开始测距";
     elements.measureBtn.classList.add("secondary");
@@ -600,6 +602,34 @@ const UI = (() => {
     svg.innerHTML = "";
 
     renderMeasurements();
+
+    if (remeasureOriginal && remeasureOriginal.points && remeasureOriginal.points.length >= 2) {
+      const pathData = remeasureOriginal.points.map((p, i) =>
+        (i === 0 ? "M" : "L") + p.x + " " + p.y
+      ).join(" ");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", pathData);
+      path.setAttribute("class", "measure-line-original");
+      svg.appendChild(path);
+
+      remeasureOriginal.points.forEach((point, index) => {
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", point.x);
+        circle.setAttribute("cy", point.y);
+        circle.setAttribute("r", "0.8");
+        circle.setAttribute("class", "measure-point-original");
+        svg.appendChild(circle);
+      });
+
+      const midPoint = calculateMidPoint(remeasureOriginal.points);
+      const labelText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      labelText.setAttribute("x", midPoint.x);
+      labelText.setAttribute("y", midPoint.y - 2);
+      labelText.setAttribute("class", "measure-label");
+      labelText.setAttribute("opacity", "0.6");
+      labelText.textContent = "原: " + remeasureOriginal.code + " " + Number(remeasureOriginal.length).toFixed(2) + "m";
+      svg.appendChild(labelText);
+    }
 
     if (measurePoints.length > 0) {
       if (measurePoints.length >= 2) {
@@ -814,6 +844,7 @@ const UI = (() => {
     currentEditMeasureId = null;
     measurePoints = [];
     selectedRelatedMarks = [];
+    remeasureOriginal = null;
     renderRelatedMarks();
     renderMeasure();
   }
@@ -1571,7 +1602,9 @@ const UI = (() => {
           (m.relatedMarks ? m.relatedMarks.length : 0) + '个标记' +
           '</span></div><div class="measure-item-meta">' +
           (m.note || "无备注") +
-          '</div><div class="measure-item-actions"><button type="button" class="secondary" data-action="edit" data-id="' +
+          '</div><div class="measure-item-actions"><button type="button" class="secondary" data-action="remeasure" data-id="' +
+          m.id +
+          '">快速复测</button><button type="button" class="secondary" data-action="edit" data-id="' +
           m.id +
           '">编辑</button><button type="button" class="secondary danger" data-action="delete" data-id="' +
           m.id +
@@ -1584,7 +1617,9 @@ const UI = (() => {
         e.stopPropagation();
         const action = btn.dataset.action;
         const id = btn.dataset.id;
-        if (action === "edit") {
+        if (action === "remeasure") {
+          startRemeasure(id);
+        } else if (action === "edit") {
           editMeasurement(id);
         } else if (action === "delete") {
           if (confirm("确定要删除这条测距记录吗？")) {
@@ -1621,6 +1656,52 @@ const UI = (() => {
 
     renderRelatedMarks();
     renderMeasureTab();
+  }
+
+  function generateRemeasureCode(originalCode) {
+    const existingCodes = new Set(measurements.map((m) => m.code));
+    const base = originalCode.replace(/-R\d+$/, "");
+    let counter = 1;
+    let newCode;
+    do {
+      newCode = base + "-R" + String(counter).padStart(2, "0");
+      counter++;
+    } while (existingCodes.has(newCode));
+    return newCode;
+  }
+
+  function startRemeasure(id) {
+    const measurement = measurements.find((m) => m.id === id);
+    if (!measurement) return;
+
+    if (!scale) {
+      showToast("请先校准比例尺", "error");
+      return;
+    }
+
+    cancelMeasuring();
+    currentEditMeasureId = null;
+    remeasureOriginal = measurement;
+    measurePoints = [];
+    selectedRelatedMarks = measurement.relatedMarks ? [...measurement.relatedMarks] : [];
+
+    isMeasuring = true;
+    elements.map.classList.add("measuring");
+    elements.measureBtn.textContent = "取消测距";
+    elements.measureBtn.classList.remove("secondary");
+    switchTab("measure");
+
+    elements.measureForm.id.value = "";
+    elements.measureForm.code.value = generateRemeasureCode(measurement.code);
+    elements.measureForm.dive.value = measurement.dive;
+    elements.measureForm.length.value = "";
+    elements.measureForm.note.value = measurement.note
+      ? "[复测来源: " + measurement.code + "] " + measurement.note
+      : "[复测来源: " + measurement.code + "]";
+
+    renderRelatedMarks();
+    renderMeasureTab();
+    showToast("快速复测模式：原测线已半透明显示，请点击地图绘制新测线", "info");
   }
 
   function edit(id) {
