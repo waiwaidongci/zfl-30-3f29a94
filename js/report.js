@@ -109,6 +109,38 @@ const Report = (() => {
       reviewStatus: m.review?.status || "collected",
     }));
 
+    const normalizedImportErrors = (importErrors || []).map(err => ({
+      source: err.source || "unknown",
+      category: err.category || "marks",
+      importedAt: err.importedAt || new Date().toISOString(),
+      index: err.index,
+      lineNumber: err.lineNumber || null,
+      code: err.code || null,
+      errors: err.errors || [],
+    }));
+
+    const importErrorsSummary = (() => {
+      const bySource = {};
+      const byCategory = {};
+      let earliestAt = null;
+      let latestAt = null;
+
+      normalizedImportErrors.forEach(err => {
+        bySource[err.source] = (bySource[err.source] || 0) + 1;
+        byCategory[err.category] = (byCategory[err.category] || 0) + 1;
+        if (!earliestAt || err.importedAt < earliestAt) earliestAt = err.importedAt;
+        if (!latestAt || err.importedAt > latestAt) latestAt = err.importedAt;
+      });
+
+      return {
+        total: normalizedImportErrors.length,
+        bySource,
+        byCategory,
+        earliestAt,
+        latestAt,
+      };
+    })();
+
     return {
       generatedAt: new Date().toISOString(),
       scope,
@@ -124,7 +156,8 @@ const Report = (() => {
       diveTimeline,
       highlightMarks,
       mapSnapshotMarks,
-      importErrors: importErrors || [],
+      importErrors: normalizedImportErrors,
+      importErrorsSummary,
       scale: scale ? {
         ratio: (scale.pixelDistance / scale.realDistance).toFixed(2),
         realDistance: scale.realDistance,
@@ -290,10 +323,49 @@ const Report = (() => {
     if (data.importErrors.length > 0) {
       html += '<div class="report-section">';
       html += '<h2>导入错误摘要</h2>';
-      html += '<table class="report-table"><thead><tr><th>编号/行号</th><th>错误信息</th></tr></thead><tbody>';
+
+      const summary = data.importErrorsSummary;
+      const categoryLabels = { marks: "标记", dives: "潜次", measurements: "测距" };
+      const sourceLabels = { json: "JSON 导入", csv: "CSV 导入", unknown: "其他" };
+
+      html += '<div class="report-import-summary">';
+      html += '<div class="report-meta">共 ' + summary.total + ' 条错误记录</div>';
+      if (summary.earliestAt && summary.latestAt) {
+        const fmtTime = (t) => new Date(t).toLocaleString("zh-CN");
+        html += '<div class="report-meta">导入时间：' + fmtTime(summary.earliestAt);
+        if (summary.earliestAt !== summary.latestAt) {
+          html += ' 至 ' + fmtTime(summary.latestAt);
+        }
+        html += '</div>';
+      }
+
+      const srcKeys = Object.keys(summary.bySource);
+      if (srcKeys.length > 0) {
+        html += '<div class="report-meta">来源：' + srcKeys.map(k => (sourceLabels[k] || k) + ' ' + summary.bySource[k] + '条').join("，") + '</div>';
+      }
+
+      const catKeys = Object.keys(summary.byCategory);
+      if (catKeys.length > 0) {
+        html += '<div class="report-meta">分类：' + catKeys.map(k => (categoryLabels[k] || k) + ' ' + summary.byCategory[k] + '条').join("，") + '</div>';
+      }
+      html += '</div>';
+
+      html += '<table class="report-table"><thead><tr><th>来源</th><th>分类</th><th>编号/行号</th><th>错误信息</th></tr></thead><tbody>';
       data.importErrors.forEach(err => {
-        const label = err.code ? escapeHtml(err.code) : "第 " + (err.index + 1) + " 项";
-        html += '<tr><td>' + label + '</td><td>' + escapeHtml(err.errors.join("; ")) + '</td></tr>';
+        let label = "";
+        if (err.code) {
+          label = escapeHtml(err.code);
+        } else if (err.lineNumber !== null && err.lineNumber !== undefined) {
+          label = "第 " + err.lineNumber + " 行";
+        } else {
+          label = "第 " + (err.index + 1) + " 项";
+        }
+        html += '<tr>';
+        html += '<td>' + escapeHtml(sourceLabels[err.source] || err.source) + '</td>';
+        html += '<td>' + escapeHtml(categoryLabels[err.category] || err.category) + '</td>';
+        html += '<td>' + label + '</td>';
+        html += '<td>' + escapeHtml(err.errors.join("; ")) + '</td>';
+        html += '</tr>';
       });
       html += '</tbody></table>';
       html += '</div>';

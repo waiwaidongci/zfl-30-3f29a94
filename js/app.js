@@ -7,6 +7,16 @@ const App = (() => {
   let pending = null;
   let currentEditId = null;
   let currentEditMeasureId = null;
+  let importErrors = [];
+
+  function setImportErrors(errors) {
+    importErrors = errors || [];
+    if (callbacks && callbacks.onImportErrorsUpdate) {
+      callbacks.onImportErrorsUpdate(importErrors);
+    }
+  }
+
+  let callbacks = null;
 
   function getDefaultDives() {
     return [
@@ -131,6 +141,21 @@ const App = (() => {
       handleDeleteMeasurement(e.detail.id);
     });
 
+    callbacks = {
+      onSaveMark: handleSaveMark,
+      onDeleteMark: handleDeleteMark,
+      onSaveDive: handleSaveDive,
+      onDeleteDive: handleDeleteDive,
+      onSaveMeasurement: handleSaveMeasurement,
+      onDeleteMeasurement: handleDeleteMeasurement,
+      onUpdateScale: handleUpdateScale,
+      onUpdateGridConfig: handleUpdateGridConfig,
+      onExport: handleExport,
+      onImport: handleImport,
+      onImportCSV: handleImportCSV,
+      onUpdateReviewStatus: handleUpdateReviewStatus,
+    };
+
     UI.init({
       marks,
       dives,
@@ -139,20 +164,8 @@ const App = (() => {
       gridConfig,
       pending,
       currentEditId,
-      callbacks: {
-        onSaveMark: handleSaveMark,
-        onDeleteMark: handleDeleteMark,
-        onSaveDive: handleSaveDive,
-        onDeleteDive: handleDeleteDive,
-        onSaveMeasurement: handleSaveMeasurement,
-        onDeleteMeasurement: handleDeleteMeasurement,
-        onUpdateScale: handleUpdateScale,
-        onUpdateGridConfig: handleUpdateGridConfig,
-        onExport: handleExport,
-        onImport: handleImport,
-        onImportCSV: handleImportCSV,
-        onUpdateReviewStatus: handleUpdateReviewStatus,
-      },
+      importErrors,
+      callbacks,
     });
 
     UI.render();
@@ -697,6 +710,25 @@ const App = (() => {
     if (summary.error > 0) parts.push(`跳过 ${summary.error} 项错误`);
 
     UI.showToast(message + parts.join("，"), "success");
+
+    const newImportErrors = [];
+    const now = new Date().toISOString();
+
+    if (comparison.errors && comparison.errors.length > 0) {
+      comparison.errors.forEach((err) => {
+        newImportErrors.push({
+          source: "csv",
+          category: "marks",
+          importedAt: now,
+          index: err.index,
+          lineNumber: err.lineNumber,
+          code: err.mark?.code || null,
+          errors: err.errors || [],
+        });
+      });
+    }
+
+    setImportErrors(newImportErrors);
   }
 
   function applyImport(comparison, resolutions) {
@@ -813,6 +845,50 @@ const App = (() => {
     }
 
     UI.showToast(message + parts.join("，"), "success");
+
+    const newImportErrors = [];
+    const now = new Date().toISOString();
+
+    if (comparison.marks && comparison.marks.errors && comparison.marks.errors.length > 0) {
+      comparison.marks.errors.forEach((err) => {
+        newImportErrors.push({
+          source: "json",
+          category: "marks",
+          importedAt: now,
+          index: err.index,
+          code: err.mark?.code || null,
+          errors: err.errors || [],
+        });
+      });
+    }
+
+    if (comparison.dives && comparison.dives.errors && comparison.dives.errors.length > 0) {
+      comparison.dives.errors.forEach((err) => {
+        newImportErrors.push({
+          source: "json",
+          category: "dives",
+          importedAt: now,
+          index: err.index,
+          code: err.dive?.code || null,
+          errors: err.errors || [],
+        });
+      });
+    }
+
+    if (comparison.measurements && comparison.measurements.errors && comparison.measurements.errors.length > 0) {
+      comparison.measurements.errors.forEach((err) => {
+        newImportErrors.push({
+          source: "json",
+          category: "measurements",
+          importedAt: now,
+          index: err.index,
+          code: err.measurement?.code || null,
+          errors: err.errors || [],
+        });
+      });
+    }
+
+    setImportErrors(newImportErrors);
   }
 
   return {

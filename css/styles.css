@@ -1472,6 +1472,15 @@ button.small {
   color: #5c7378;
 }
 
+.report-import-summary {
+  background: #f5fafb;
+  border: 1px solid #d7e4e5;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0 12px;
+  font-size: 12px;
+}
+
 @media print {
   header, .app, .modal-backdrop, .modal { display: none !important; }
 }

@@ -25,6 +25,7 @@ const UI = (() => {
   let isMeasuring = false;
   let measurePoints = [];
   let selectedRelatedMarks = [];
+  let importErrors = [];
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -112,6 +113,7 @@ const UI = (() => {
     gridConfig = deps.gridConfig || { enabled: false, size: 1, showLabels: true };
     pending = deps.pending;
     currentEditId = deps.currentEditId;
+    importErrors = deps.importErrors || [];
 
     if (gridConfig.size) {
       elements.gridSize.value = gridConfig.size;
@@ -121,6 +123,13 @@ const UI = (() => {
     }
 
     callbacks = deps.callbacks;
+
+    if (callbacks && typeof callbacks.onImportErrorsUpdate !== "function") {
+      callbacks.onImportErrorsUpdate = (errors) => {
+        importErrors = errors || [];
+      };
+    }
+
     initRibs();
     bindEvents(callbacks);
     updateDiveSelect();
@@ -2648,7 +2657,7 @@ const UI = (() => {
         scopeDive: scopeSelect.value === "dive" ? modal.querySelector("#reportScopeDive").value : "",
         scopeType: scopeSelect.value === "type" ? modal.querySelector("#reportScopeType").value : "",
         scopeReview: scopeSelect.value === "review" ? modal.querySelector("#reportScopeReview").value : "",
-        importErrors: [],
+        importErrors: importErrors || [],
       };
 
       const data = Report.aggregate(options);
@@ -2722,6 +2731,7 @@ const UI = (() => {
       .report-dive-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
       .report-dive-objective { padding: 8px; background: #f5fafb; border-radius: 4px; margin: 8px 0; font-size: 13px; line-height: 1.5; }
       .report-scale-info { font-size: 13px; color: #5c7378; }
+      .report-import-summary { background: #f5fafb; border: 1px solid #d7e4e5; border-radius: 6px; padding: 8px 12px; margin: 8px 0 12px; font-size: 12px; }
       .muted { color: #5c7378; font-size: 13px; }
       @media print {
         body { padding: 0; }
