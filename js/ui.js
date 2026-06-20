@@ -48,6 +48,7 @@ const UI = (() => {
       view: document.querySelector("#view"),
       listTitle: document.querySelector("#listTitle"),
       exportBtn: document.querySelector("#exportBtn"),
+      exportOfflineBtn: document.querySelector("#exportOfflineBtn"),
       importBtn: document.querySelector("#importBtn"),
       importCSVBtn: document.querySelector("#importCSVBtn"),
       deleteBtn: document.querySelector("#deleteBtn"),
@@ -275,6 +276,14 @@ const UI = (() => {
     elements.exportBtn.onclick = () => {
       callbacks.onExport();
     };
+
+    if (elements.exportOfflineBtn) {
+      elements.exportOfflineBtn.onclick = () => {
+        if (callbacks.onExportOfflineMerge) {
+          callbacks.onExportOfflineMerge();
+        }
+      };
+    }
 
     elements.importBtn.onclick = () => {
       callbacks.onImport();
@@ -1946,6 +1955,576 @@ const UI = (() => {
     };
   }
 
+  function showMergePreview(analysis, onConfirm, onCancel) {
+    let currentEntity = "marks";
+    let currentCategory = "new";
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal merge-modal";
+
+    const markResolutions = {
+      new: (analysis.marks?.new || []).map(() => "add"),
+      modified: (analysis.marks?.modified || []).map(() => "keep"),
+      deleted: (analysis.marks?.deleted || []).map(() => "keep"),
+      diverged: (analysis.marks?.diverged || []).map(() => "saveas"),
+      positionDuplicates: (analysis.marks?.positionDuplicates || []).map(() => "review"),
+    };
+
+    const diveResolutions = {
+      new: (analysis.dives?.new || []).map(() => "add"),
+      modified: (analysis.dives?.modified || []).map(() => "keep"),
+      deleted: (analysis.dives?.deleted || []).map(() => "keep"),
+      diverged: (analysis.dives?.diverged || []).map(() => "saveas"),
+    };
+
+    const measurementResolutions = {
+      new: (analysis.measurements?.new || []).map(() => "add"),
+      modified: (analysis.measurements?.modified || []).map(() => "keep"),
+      deleted: (analysis.measurements?.deleted || []).map(() => "keep"),
+      diverged: (analysis.measurements?.diverged || []).map(() => "saveas"),
+    };
+
+    function getResolutions(entity, category) {
+      if (entity === "marks") return markResolutions[category] || [];
+      if (entity === "dives") return diveResolutions[category] || [];
+      if (entity === "measurements") return measurementResolutions[category] || [];
+      return [];
+    }
+
+    function getAnalysisData(entity) {
+      if (entity === "marks") return analysis.marks || {};
+      if (entity === "dives") return analysis.dives || {};
+      if (entity === "measurements") return analysis.measurements || {};
+      return {};
+    }
+
+    function getCategoryLabel(category) {
+      const labels = {
+        new: "新增",
+        modified: "修改",
+        deleted: "删除",
+        diverged: "分叉编辑",
+        positionDuplicates: "位置疑似重复",
+        unchanged: "未变更",
+        errors: "错误",
+      };
+      return labels[category] || category;
+    }
+
+    function getCategoryCount(entity, category) {
+      const data = getAnalysisData(entity);
+      const items = data[category];
+      return Array.isArray(items) ? items.length : 0;
+    }
+
+    function renderSummary() {
+      const data = getAnalysisData(currentEntity);
+      const summary = analysis.summary?.[currentEntity] || {};
+      let html = '<div class="merge-summary-grid">';
+
+      const categories = [
+        { key: "new", class: "new", icon: "➕" },
+        { key: "modified", class: "modified", icon: "✏️" },
+        { key: "deleted", class: "deleted", icon: "🗑️" },
+        { key: "diverged", class: "diverged", icon: "🔀" },
+      ];
+
+      if (currentEntity === "marks") {
+        categories.push({ key: "positionDuplicates", class: "duplicate", icon: "📍" });
+      }
+
+      categories.push({ key: "unchanged", class: "unchanged", icon: "✓" });
+
+      categories.forEach((cat) => {
+        const count = getCategoryCount(currentEntity, cat.key);
+        const isActive = currentCategory === cat.key;
+        html +=
+          '<div class="merge-summary-item ' +
+          (isActive ? "active" : "") +
+          '" data-category="' +
+          cat.key +
+          '">' +
+          '<div class="merge-summary-count ' +
+          cat.class +
+          '">' +
+          count +
+          "</div>" +
+          '<div class="merge-summary-label">' +
+          getCategoryLabel(cat.key) +
+          "</div>" +
+          "</div>";
+      });
+
+      html += "</div>";
+      return html;
+    }
+
+    function renderEntityTabs() {
+      const entities = [
+        { key: "marks", label: "标记数据" },
+        { key: "dives", label: "潜次档案" },
+        { key: "measurements", label: "测距记录" },
+      ];
+
+      let html = '<div class="merge-entity-tabs">';
+      entities.forEach((ent) => {
+        const count = analysis.summary?.[ent.key]?.total || 0;
+        html +=
+          '<button type="button" class="merge-entity-tab ' +
+          (currentEntity === ent.key ? "active" : "") +
+          '" data-entity="' +
+          ent.key +
+          '">' +
+          ent.label +
+          " (" +
+          count +
+          ")" +
+          "</button>";
+      });
+      html += "</div>";
+      return html;
+    }
+
+    function renderDiff(diff) {
+      if (!diff || !diff.changed || diff.changed.length === 0) return "";
+
+      let html = '<div class="merge-item-detail">';
+      html += '<div class="merge-item-detail-grid">';
+      html += '<div class="merge-item-detail-section local"><h4>本地数据</h4>';
+      diff.changed.forEach((change) => {
+        html +=
+          '<div class="diff-field"><span class="diff-field-name">' +
+          change.field +
+          '</span><span class="diff-local">' +
+          escapeHtml(String(change.local ?? "-")) +
+          "</span></div>";
+      });
+      html += "</div>";
+
+      html += '<div class="merge-item-detail-section imported"><h4>导入数据</h4>';
+      diff.changed.forEach((change) => {
+        html +=
+          '<div class="diff-field"><span class="diff-field-name">' +
+          change.field +
+          '</span><span class="diff-imported">' +
+          escapeHtml(String(change.imported ?? "-")) +
+          "</span></div>";
+      });
+      html += "</div>";
+      html += "</div></div>";
+
+      return html;
+    }
+
+    function getResolutionOptions(entity, category) {
+      const options = {
+        marks: {
+          new: [
+            { value: "add", label: "添加" },
+            { value: "skip", label: "跳过" },
+          ],
+          modified: [
+            { value: "keep", label: "保留本地" },
+            { value: "overwrite", label: "覆盖本地" },
+          ],
+          deleted: [
+            { value: "keep", label: "保留本地" },
+            { value: "delete", label: "确认删除" },
+          ],
+          diverged: [
+            { value: "keep", label: "保留本地" },
+            { value: "overwrite", label: "覆盖本地" },
+            { value: "saveas", label: "另存新编号" },
+          ],
+          positionDuplicates: [
+            { value: "review", label: "待审核" },
+            { value: "add", label: "添加为新标记" },
+            { value: "skip", label: "跳过" },
+          ],
+        },
+        dives: {
+          new: [
+            { value: "add", label: "添加" },
+            { value: "skip", label: "跳过" },
+          ],
+          modified: [
+            { value: "keep", label: "保留本地" },
+            { value: "overwrite", label: "覆盖本地" },
+          ],
+          deleted: [
+            { value: "keep", label: "保留本地" },
+            { value: "delete", label: "确认删除" },
+          ],
+          diverged: [
+            { value: "keep", label: "保留本地" },
+            { value: "overwrite", label: "覆盖本地" },
+            { value: "saveas", label: "另存新编号" },
+          ],
+        },
+        measurements: {
+          new: [
+            { value: "add", label: "添加" },
+            { value: "skip", label: "跳过" },
+          ],
+          modified: [
+            { value: "keep", label: "保留本地" },
+            { value: "overwrite", label: "覆盖本地" },
+          ],
+          deleted: [
+            { value: "keep", label: "保留本地" },
+            { value: "delete", label: "确认删除" },
+          ],
+          diverged: [
+            { value: "keep", label: "保留本地" },
+            { value: "overwrite", label: "覆盖本地" },
+            { value: "saveas", label: "另存新编号" },
+          ],
+        },
+      };
+
+      return options[entity]?.[category] || [];
+    }
+
+    function renderMergeList() {
+      const data = getAnalysisData(currentEntity);
+      const items = data[currentCategory] || [];
+      const resolutions = getResolutions(currentEntity, currentCategory);
+
+      if (items.length === 0) {
+        return (
+          '<div class="merge-list"><div class="merge-empty"><div class="merge-empty-icon">📭</div><div>暂无' +
+          getCategoryLabel(currentCategory) +
+          "的数据</div></div></div>"
+        );
+      }
+
+      let html = '<div class="merge-list">';
+
+      items.forEach((item, idx) => {
+        const resolution = resolutions[idx] || item.resolution || "keep";
+        const options = getResolutionOptions(currentEntity, currentCategory);
+
+        let title = "";
+        let subtitle = "";
+        let typePill = "";
+        let noteHtml = "";
+        let diffHtml = "";
+
+        if (currentEntity === "marks") {
+          const mark = item.imported || item.local || item.importedMark || item.localMark;
+          title = mark.code || "未命名";
+          subtitle = (mark.dive || "") + " · " + (mark.depth || "");
+          typePill =
+            '<span class="pill ' +
+            (mark.type || "unknown") +
+            '">' +
+            (typeNames[mark.type] || "未知") +
+            "</span>";
+
+          if (currentCategory === "positionDuplicates") {
+            const dist = item.distance || 0;
+            noteHtml =
+              '<div class="merge-item-note">⚠️ 位置接近，距离约 ' +
+              dist.toFixed(2) +
+              "%，可能为同一标记</div>";
+          }
+          if (item.note) {
+            noteHtml = '<div class="merge-item-note">⚠️ ' + escapeHtml(item.note) + "</div>";
+          }
+          if (item.diff) {
+            diffHtml = renderDiff(item.diff);
+          }
+        } else if (currentEntity === "dives") {
+          const dive = item.imported || item.local;
+          title = dive.code || "未命名";
+          subtitle = (dive.date || "") + " · " + (dive.leader || "");
+          typePill =
+            '<span class="pill">' + (weatherNames[dive.weather] || "未知") + "</span>";
+
+          if (item.note) {
+            noteHtml = '<div class="merge-item-note">⚠️ ' + escapeHtml(item.note) + "</div>";
+          }
+          if (item.diff) {
+            diffHtml = renderDiff(item.diff);
+          }
+        } else if (currentEntity === "measurements") {
+          const meas = item.imported || item.local;
+          title = meas.code || "未命名";
+          subtitle = (meas.dive || "") + " · " + (meas.length || 0) + "米";
+          typePill = '<span class="pill pill-measure">测距</span>';
+
+          if (item.note) {
+            noteHtml = '<div class="merge-item-note">⚠️ ' + escapeHtml(item.note) + "</div>";
+          }
+        }
+
+        html += '<div class="merge-item" data-index="' + idx + '">';
+        html += '<div class="merge-item-header">';
+        html += '<div class="merge-item-title">';
+        html += "<b>" + escapeHtml(title) + "</b>";
+        html += typePill;
+        html += '<span class="muted small">' + escapeHtml(subtitle) + "</span>";
+        html += "</div>";
+        html += '<div class="merge-item-actions">';
+        html +=
+          '<select data-resolution data-entity="' +
+          currentEntity +
+          '" data-category="' +
+          currentCategory +
+          '" data-index="' +
+          idx +
+          '">';
+        options.forEach((opt) => {
+          html +=
+            '<option value="' +
+            opt.value +
+            '" ' +
+            (resolution === opt.value ? "selected" : "") +
+            ">" +
+            opt.label +
+            "</option>";
+        });
+        html += "</select>";
+        html +=
+          '<button type="button" class="secondary small" data-toggle-detail data-entity="' +
+          currentEntity +
+          '" data-category="' +
+          currentCategory +
+          '" data-index="' +
+          idx +
+          '">详情</button>';
+        html += "</div></div>";
+
+        if (noteHtml) {
+          html += noteHtml;
+        }
+        if (diffHtml) {
+          html += '<div class="merge-item-detail-wrapper hidden">' + diffHtml + "</div>";
+        }
+        html += "</div>";
+      });
+
+      html += "</div>";
+      return html;
+    }
+
+    function renderErrors() {
+      const data = getAnalysisData(currentEntity);
+      const errors = data.errors || [];
+
+      if (errors.length === 0) return "";
+
+      let html = '<div class="merge-error">';
+      html += "<b>验证错误 (" + errors.length + " 项)</b>";
+      html += "<ul>";
+      errors.forEach((err) => {
+        const code =
+          (err.mark && err.mark.code) ||
+          (err.dive && err.dive.code) ||
+          (err.measurement && err.measurement.code) ||
+          "第 " + (err.index + 1) + " 项";
+        html +=
+          "<li><b>" +
+          escapeHtml(code) +
+          "</b>: " +
+          escapeHtml((err.errors || []).join("; ")) +
+          "</li>";
+      });
+      html += "</ul></div>";
+      return html;
+    }
+
+    function render() {
+      const exportDate = analysis.exportDate
+        ? new Date(analysis.exportDate).toLocaleString("zh-CN")
+        : "未知";
+      const deviceName = analysis.deviceName || analysis.deviceId || "未知设备";
+
+      let html = "<h2>离线数据合并预览</h2>";
+
+      html += '<div class="merge-header">';
+      html += '<div class="merge-device-info">';
+      html +=
+        "<div><span class='muted'>设备编号</span><b>" +
+        escapeHtml(analysis.deviceId || "未知") +
+        "</b></div>";
+      html +=
+        "<div><span class='muted'>设备名称</span><b>" +
+        escapeHtml(deviceName) +
+        "</b></div>";
+      html +=
+        "<div><span class='muted'>导出时间</span><b>" +
+        escapeHtml(exportDate) +
+        "</b></div>";
+      html += "</div>";
+      html +=
+        '<div class="muted small">请逐项确认合并方式，确认后将应用到当前项目数据。</div>';
+      html += "</div>";
+
+      html += renderEntityTabs();
+      html += renderSummary();
+      html += renderErrors();
+      html += renderMergeList();
+
+      html += '<div class="merge-toolbar">';
+      html += '<div class="merge-toolbar-left">';
+      html +=
+        '<span class="muted">批量操作:</span>';
+      html +=
+        '<select class="merge-batch-select" id="batchSelect"><option value="">选择批量操作...</option>';
+      const batchOptions = getResolutionOptions(currentEntity, currentCategory);
+      batchOptions.forEach((opt) => {
+        html +=
+          '<option value="' + opt.value + '">全部' + opt.label + "</option>";
+      });
+      html += "</select>";
+      html += "</div>";
+      html += '<div class="merge-toolbar-right">';
+      html +=
+        '<button type="button" class="secondary" id="cancelMergeBtn">取消</button>';
+      html +=
+        '<button type="button" class="merge-apply-all-btn" id="confirmMergeBtn">确认合并</button>';
+      html += "</div></div>";
+
+      modal.innerHTML = html;
+      bindEvents();
+    }
+
+    function bindEvents() {
+      modal.querySelectorAll(".merge-entity-tab").forEach((tab) => {
+        tab.onclick = () => {
+          currentEntity = tab.dataset.entity;
+          currentCategory = "new";
+          render();
+        };
+      });
+
+      modal.querySelectorAll(".merge-summary-item").forEach((item) => {
+        item.onclick = () => {
+          currentCategory = item.dataset.category;
+          render();
+        };
+      });
+
+      modal.querySelectorAll("[data-resolution]").forEach((select) => {
+        select.onchange = (e) => {
+          const entity = e.target.dataset.entity;
+          const category = e.target.dataset.category;
+          const idx = parseInt(e.target.dataset.index);
+          const resolutions = getResolutions(entity, category);
+          if (resolutions[idx] !== undefined) {
+            resolutions[idx] = e.target.value;
+          }
+        };
+      });
+
+      modal.querySelectorAll("[data-toggle-detail]").forEach((btn) => {
+        btn.onclick = (e) => {
+          const idx = parseInt(e.target.dataset.index);
+          const item = modal.querySelector(
+            '.merge-item[data-index="' + idx + '"]'
+          );
+          const detail = item.querySelector(".merge-item-detail-wrapper");
+          if (detail) {
+            detail.classList.toggle("hidden");
+            btn.textContent = detail.classList.contains("hidden") ? "详情" : "收起";
+          }
+        };
+      });
+
+      const batchSelect = modal.querySelector("#batchSelect");
+      if (batchSelect) {
+        batchSelect.onchange = (e) => {
+          const value = e.target.value;
+          if (!value) return;
+
+          const resolutions = getResolutions(currentEntity, currentCategory);
+          resolutions.forEach((_, idx) => {
+            resolutions[idx] = value;
+            const select = modal.querySelector(
+              '[data-resolution][data-entity="' +
+                currentEntity +
+                '"][data-category="' +
+                currentCategory +
+                '"][data-index="' +
+                idx +
+                '"]'
+            );
+            if (select) select.value = value;
+          });
+
+          batchSelect.value = "";
+        };
+      }
+
+      modal.querySelector("#confirmMergeBtn").onclick = () => {
+        document.body.removeChild(backdrop);
+        onConfirm({
+          markResolutions,
+          diveResolutions,
+          measurementResolutions,
+        });
+      };
+
+      modal.querySelector("#cancelMergeBtn").onclick = () => {
+        document.body.removeChild(backdrop);
+        onCancel();
+      };
+
+      backdrop.onclick = (e) => {
+        if (e.target === backdrop) {
+          document.body.removeChild(backdrop);
+          onCancel();
+        }
+      };
+    }
+
+    render();
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+  }
+
+  function showRollbackNotice(snapshotDate, onRollback) {
+    const notice = document.createElement("div");
+    notice.className = "rollback-notice";
+    notice.id = "rollbackNotice";
+
+    const dateStr = snapshotDate
+      ? new Date(snapshotDate).toLocaleString("zh-CN")
+      : "未知时间";
+
+    notice.innerHTML =
+      '<span>⚠️ 最近一次合并前的快照可用（' +
+      escapeHtml(dateStr) +
+      '），如有问题可撤销合并。</span>' +
+      '<button type="button" id="rollbackBtn">撤销合并</button>';
+
+    const header = document.querySelector("header");
+    if (header && !document.querySelector("#rollbackNotice")) {
+      header.after(notice);
+    }
+
+    const rollbackBtn = document.querySelector("#rollbackBtn");
+    if (rollbackBtn) {
+      rollbackBtn.onclick = () => {
+        if (confirm("确定要撤销最近一次合并操作吗？这将恢复到合并前的状态。")) {
+          onRollback();
+          notice.remove();
+        }
+      };
+    }
+  }
+
+  function hideRollbackNotice() {
+    const notice = document.querySelector("#rollbackNotice");
+    if (notice) {
+      notice.remove();
+    }
+  }
+
   function showToast(message, type = "info") {
     const toast = document.createElement("div");
     toast.style.cssText =
@@ -2977,6 +3556,9 @@ const UI = (() => {
     resetMeasureForm,
     resetAllState,
     showImportPreview,
+    showMergePreview,
+    showRollbackNotice,
+    hideRollbackNotice,
     showCSVFieldMappingPreview,
     showCSVImportPreview,
     showToast,

@@ -163,6 +163,20 @@ const DataIO = (() => {
     URL.revokeObjectURL(a.href);
   }
 
+  function exportOfflineMerge(marks, dives, measurements, scale, gridConfig, filename = "dive-records-offline.json") {
+    if (MergeModule && typeof MergeModule.buildExportData === "function") {
+      const data = MergeModule.buildExportData(marks, dives, measurements, scale, gridConfig);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } else {
+      exportFullData(marks, dives, measurements, scale, gridConfig, filename);
+    }
+  }
+
   function exportMarksOnly(marks, filename = "dive-marks.json") {
     const blob = new Blob([JSON.stringify(marks, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -225,6 +239,13 @@ const DataIO = (() => {
 
   function isFullDataFormatV6(data) {
     return isFullDataFormatV4(data) && data.version && parseFloat(data.version) >= 6.0;
+  }
+
+  function isOfflineMergeFormat(data) {
+    if (typeof MergeModule !== "undefined" && typeof MergeModule.isOfflineMergeFormat === "function") {
+      return MergeModule.isOfflineMergeFormat(data);
+    }
+    return data && typeof data === "object" && data.format === "offline-merge" && data.snapshot && data.changeLog;
   }
 
   function readFileAsDataURL(file) {
@@ -552,6 +573,7 @@ const DataIO = (() => {
     loadImportErrors,
     saveImportErrors,
     exportFullData,
+    exportOfflineMerge,
     exportMarksOnly,
     readFileAsText,
     readFileAsDataURL,
@@ -563,6 +585,7 @@ const DataIO = (() => {
     isFullDataFormatV4,
     isFullDataFormatV5,
     isFullDataFormatV6,
+    isOfflineMergeFormat,
     getDefaultReview,
     ensureReviewData,
     generateThumbnail,

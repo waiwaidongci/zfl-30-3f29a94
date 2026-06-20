@@ -119,6 +119,9 @@ const App = (() => {
 
   function loadProjectData(includeDefaultData = false) {
     DataIO.setProjectId(currentProject.id);
+    if (typeof MergeModule !== "undefined" && typeof MergeModule.setProjectId === "function") {
+      MergeModule.setProjectId(currentProject.id);
+    }
     marks = DataIO.loadMarks();
     dives = DataIO.loadDives();
     measurements = DataIO.loadMeasurements();
@@ -160,6 +163,7 @@ const App = (() => {
       onUpdateScale: handleUpdateScale,
       onUpdateGridConfig: handleUpdateGridConfig,
       onExport: handleExport,
+      onExportOfflineMerge: handleExportOfflineMerge,
       onImport: handleImport,
       onImportCSV: handleImportCSV,
       onUpdateReviewStatus: handleUpdateReviewStatus,
@@ -185,6 +189,7 @@ const App = (() => {
     });
 
     UI.render();
+    checkMergeSnapshot();
   }
 
   function handleSwitchProject(projectId) {
@@ -547,6 +552,16 @@ const App = (() => {
     DataIO.exportFullData(marks, dives, measurements, scale, gridConfig, safeName + ".json");
   }
 
+  function handleExportOfflineMerge() {
+    const projectName = currentProject ? currentProject.name : "dive-records";
+    const safeName = projectName.replace(/[^\w\u4e00-\u9fff-]/g, "_");
+    if (typeof MergeModule !== "undefined" && typeof MergeModule.buildExportData === "function") {
+      DataIO.exportOfflineMerge(marks, dives, measurements, scale, gridConfig, safeName + "-offline.json");
+    } else {
+      handleExport();
+    }
+  }
+
   async function handleImport() {
     try {
       const file = await DataIO.triggerFileInput();
@@ -555,6 +570,28 @@ const App = (() => {
 
       if (!parsed.success) {
         UI.showToast("JSON 解析失败: " + parsed.error, "error");
+        return;
+      }
+
+      const isOfflineMerge = DataIO.isOfflineMergeFormat(parsed.data);
+      if (isOfflineMerge && typeof MergeModule !== "undefined") {
+        const localData = {
+          marks,
+          dives,
+          measurements,
+          scale,
+          gridConfig,
+        };
+        const analysis = MergeModule.analyzeMerge(localData, parsed.data);
+        UI.showMergePreview(
+          analysis,
+          (resolutions) => {
+            applyOfflineMerge(analysis, resolutions);
+          },
+          () => {
+            UI.showToast("已取消合并", "info");
+          }
+        );
         return;
       }
 
@@ -1007,6 +1044,131 @@ const App = (() => {
     }
 
     setImportErrors(newImportErrors);
+  }
+
+  function applyOfflineMerge(analysis, resolutions) {
+    if (typeof MergeModule === "undefined") return;
+
+    MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig);
+
+    const localData = {
+      marks,
+      dives,
+      measurements,
+      scale,
+      gridConfig,
+    };
+
+    const result = MergeModule.applyMerge(localData, analysis, resolutions);
+
+    marks = result.marks;
+    dives = result.dives;
+    measurements = result.measurements;
+    scale = result.scale;
+    gridConfig = result.gridConfig;
+
+    autoCreateDivesFromMarks();
+
+    save();
+    saveDives();
+    saveMeasurements();
+    saveScale();
+    saveGridConfig();
+
+    UI.updateState(
+      marks,
+      dives,
+      measurements,
+      scale,
+      gridConfig,
+      pending,
+      currentEditId,
+      currentEditMeasureId
+    );
+
+    const summary = analysis.summary;
+    let parts = [];
+
+    if (summary?.marks) {
+      const markAdded = summary.marks.new;
+      const markModified = summary.marks.modified;
+      const markDiverged = summary.marks.diverged;
+      const markDeleted = summary.marks.deleted;
+      if (markAdded > 0) parts.push(`标记新增 ${markAdded} 项`);
+      if (markModified > 0) parts.push(`标记修改 ${markModified} 项`);
+      if (markDiverged > 0) parts.push(`标记分叉 ${markDiverged} 项`);
+      if (markDeleted > 0) parts.push(`标记删除 ${markDeleted} 项`);
+    }
+
+    if (summary?.dives) {
+      const diveAdded = summary.dives.new;
+      const diveModified = summary.dives.modified;
+      if (diveAdded > 0) parts.push(`潜次新增 ${diveAdded} 项`);
+      if (diveModified > 0) parts.push(`潜次修改 ${diveModified} 项`);
+    }
+
+    if (summary?.measurements) {
+      const measAdded = summary.measurements.new;
+      if (measAdded > 0) parts.push(`测距新增 ${measAdded} 项`);
+    }
+
+    UI.showToast("合并完成：" + (parts.length > 0 ? parts.join("，") : "无变更"), "success");
+
+    const snapshot = MergeModule.loadSnapshot();
+    if (snapshot) {
+      UI.showRollbackNotice(snapshot.timestamp, () => {
+        rollbackFromMerge();
+      });
+    }
+  }
+
+  function rollbackFromMerge() {
+    if (typeof MergeModule === "undefined") return;
+
+    const snapshot = MergeModule.rollbackFromSnapshot();
+    if (!snapshot) {
+      UI.showToast("没有可撤销的合并快照", "error");
+      return;
+    }
+
+    marks = snapshot.marks || [];
+    dives = snapshot.dives || [];
+    measurements = snapshot.measurements || [];
+    scale = snapshot.scale || null;
+    gridConfig = snapshot.gridConfig || { enabled: false, size: 1, showLabels: true };
+
+    save();
+    saveDives();
+    saveMeasurements();
+    saveScale();
+    saveGridConfig();
+
+    UI.updateState(
+      marks,
+      dives,
+      measurements,
+      scale,
+      gridConfig,
+      pending,
+      currentEditId,
+      currentEditMeasureId
+    );
+
+    MergeModule.clearSnapshot();
+
+    UI.showToast("已撤销合并，数据已恢复", "success");
+  }
+
+  function checkMergeSnapshot() {
+    if (typeof MergeModule === "undefined") return;
+    if (MergeModule.hasSnapshot()) {
+      const snapshot = MergeModule.loadSnapshot();
+      if (snapshot) {
+        UI.showRollbackNotice(snapshot.timestamp, () => {
+          rollbackFromMerge();
+        });
+      }
+    }
   }
 
   return {
