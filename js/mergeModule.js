@@ -106,8 +106,7 @@ const MergeModule = (() => {
   function simpleHash(str) {
     if (!str) return "";
     let hash = 0;
-    const len = Math.min(str.length, 1000);
-    for (let i = 0; i < len; i++) {
+    for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
       hash = hash & hash;
@@ -961,6 +960,15 @@ const MergeModule = (() => {
       return localInfo;
     }
 
+    function hasImportedAttachment(importedAtt) {
+      if (!importedAtt) return false;
+      const importedHash = _computeHash(importedAtt);
+      return result.some((att) => {
+        if (att.id && importedAtt.id && att.id === importedAtt.id) return true;
+        return att.name && importedAtt.name && att.name === importedAtt.name && _computeHash(att) === importedHash;
+      });
+    }
+
     if (attachmentAnalysis?.unchanged && attachmentAnalysis.unchanged.length > 0) {
       attachmentAnalysis.unchanged.forEach((item) => {
         const att = item.imported || item.local;
@@ -998,6 +1006,7 @@ const MergeModule = (() => {
         const localVal = item.local?.id || item.local?.name;
 
         if (res === "overwrite") {
+          if (hasImportedAttachment(item.imported)) return;
           let localInfo = localKey === "id" ? byId.get(localVal) : byName.get(localVal);
           if (!localInfo) {
             localInfo = findOrAddLocal(item);
@@ -1007,6 +1016,7 @@ const MergeModule = (() => {
             result[localInfo.idx] = imported;
           }
         } else if (res === "keepboth") {
+          if (hasImportedAttachment(item.imported)) return;
           const imported = { ...item.imported };
           const existingCodes = new Set(result.map((a) => a.name));
           imported.name = generateUniqueAttachmentName(existingCodes, imported.name);
@@ -1265,7 +1275,7 @@ const MergeModule = (() => {
             : { ...item.imported };
           if (item.hasAttachmentChanges) {
             imported.attachments = applyAttachmentResolutions(
-              [],
+              imported.attachments || [],
               item.attachments,
               markAttResolutions
             );
