@@ -1,0 +1,83 @@
+{
+  "version": "7.0",
+  "exportDate": "2025-07-01T10:00:00.000Z",
+  "dives": [
+    {
+      "id": "dive-b01-id",
+      "code": "B-DIVE-01",
+      "date": "2025-07-01",
+      "leader": "陈教授",
+      "weather": "sunny",
+      "current": "calm",
+      "visibility": "10-15米",
+      "objective": "二号遗址初步勘查",
+      "participants": [
+        { "name": "陈教授", "role": "负责人", "equipment": "" }
+      ]
+    }
+  ],
+  "marks": [
+    {
+      "id": "mark-b01-id",
+      "code": "B-001",
+      "type": "ceramic",
+      "dive": "B-DIVE-01",
+      "x": 50,
+      "y": 50,
+      "depth": "22.0m",
+      "orientation": "北",
+      "condition": "完整",
+      "note": "二号遗址标本",
+      "sampling": {
+        "sampleNo": "",
+        "sampleMethod": "",
+        "sampler": "",
+        "sampleTime": ""
+      },
+      "review": {
+        "status": "collected",
+        "comment": "",
+        "reviewer": "",
+        "reviewedAt": null,
+        "history": [
+          { "status": "collected", "at": "2025-07-01T10:00:00.000Z", "comment": "", "reviewer": "" }
+        ]
+      },
+      "attachments": []
+    },
+    {
+      "id": "mark-b02-id",
+      "code": "B-002",
+      "type": "unknown",
+      "dive": "B-DIVE-01",
+      "x": 70,
+      "y": 30,
+      "depth": "23.5m",
+      "orientation": "东南",
+      "condition": "待鉴定",
+      "note": "疑似金属构件",
+      "sampling": {
+        "sampleNo": "",
+        "sampleMethod": "",
+        "sampler": "",
+        "sampleTime": ""
+      },
+      "review": {
+        "status": "pending",
+        "comment": "",
+        "reviewer": "",
+        "reviewedAt": null,
+        "history": [
+          { "status": "pending", "at": "2025-07-01T11:00:00.000Z", "comment": "", "reviewer": "" }
+        ]
+      },
+      "attachments": []
+    }
+  ],
+  "measurements": [],
+  "scale": null,
+  "gridConfig": { "enabled": true, "size": 2, "showLabels": true },
+  "baseMap": null,
+  "revisitPlan": [],
+  "views": []
+}

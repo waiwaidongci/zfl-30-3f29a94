@@ -1,0 +1,140 @@
+{
+  "version": "7.0",
+  "exportDate": "2025-06-15T10:00:00.000Z",
+  "dives": [
+    {
+      "id": "dive-001-id",
+      "code": "DIVE-01",
+      "date": "2025-06-15",
+      "leader": "张教授",
+      "weather": "sunny",
+      "current": "weak",
+      "visibility": "5-8米",
+      "objective": "勘查船艉区域，采集陶瓷标本",
+      "participants": [
+        { "name": "张教授", "role": "潜次负责人", "equipment": "潜水表、水下相机" },
+        { "name": "王研究员", "role": "采样员", "equipment": "采样箱、标签贴纸" }
+      ]
+    },
+    {
+      "id": "dive-002-id",
+      "code": "DIVE-02",
+      "date": "2025-06-16",
+      "leader": "李研究员",
+      "weather": "cloudy",
+      "current": "moderate",
+      "visibility": "3-5米",
+      "objective": "记录船体结构，测量船肋间距",
+      "participants": [
+        { "name": "李研究员", "role": "潜次负责人", "equipment": "测量板、卷尺" }
+      ]
+    }
+  ],
+  "marks": [
+    {
+      "id": "mark-001-id",
+      "code": "A-017",
+      "type": "ceramic",
+      "dive": "DIVE-01",
+      "x": 42,
+      "y": 46,
+      "depth": "17.8m",
+      "orientation": "东",
+      "condition": "边缘残缺",
+      "note": "靠近船肋",
+      "sampling": {
+        "sampleNo": "",
+        "sampleMethod": "",
+        "sampler": "",
+        "sampleTime": ""
+      },
+      "review": {
+        "status": "collected",
+        "comment": "",
+        "reviewer": "",
+        "reviewedAt": null,
+        "history": [
+          { "status": "collected", "at": "2025-06-15T10:00:00.000Z", "comment": "", "reviewer": "" }
+        ]
+      },
+      "attachments": []
+    },
+    {
+      "id": "mark-002-id",
+      "code": "W-003",
+      "type": "wood",
+      "dive": "DIVE-02",
+      "x": 58,
+      "y": 39,
+      "depth": "18.2m",
+      "orientation": "西北",
+      "condition": "稳定",
+      "note": "疑似横梁",
+      "sampling": {
+        "sampleNo": "",
+        "sampleMethod": "",
+        "sampler": "",
+        "sampleTime": ""
+      },
+      "review": {
+        "status": "pending",
+        "comment": "",
+        "reviewer": "",
+        "reviewedAt": null,
+        "history": [
+          { "status": "pending", "at": "2025-06-16T10:00:00.000Z", "comment": "", "reviewer": "" }
+        ]
+      },
+      "attachments": []
+    },
+    {
+      "id": "mark-003-id",
+      "code": "M-005",
+      "type": "metal",
+      "dive": "DIVE-01",
+      "x": 35,
+      "y": 55,
+      "depth": "16.5m",
+      "orientation": "南",
+      "condition": "锈蚀严重",
+      "note": "铁钉",
+      "sampling": {
+        "sampleNo": "S-001",
+        "sampleMethod": "原位记录",
+        "sampler": "王研究员",
+        "sampleTime": "2025-06-15T14:30:00.000Z"
+      },
+      "review": {
+        "status": "confirmed",
+        "comment": "已确认是铁钉",
+        "reviewer": "张教授",
+        "reviewedAt": "2025-06-15T16:00:00.000Z",
+        "history": [
+          { "status": "collected", "at": "2025-06-15T10:00:00.000Z", "comment": "", "reviewer": "" },
+          { "status": "confirmed", "at": "2025-06-15T16:00:00.000Z", "comment": "已确认是铁钉", "reviewer": "张教授" }
+        ]
+      },
+      "attachments": []
+    }
+  ],
+  "measurements": [
+    {
+      "id": "meas-001-id",
+      "code": "DIST-001",
+      "dive": "DIVE-01",
+      "length": 12.5,
+      "points": [
+        { "x": 35, "y": 45 },
+        { "x": 60, "y": 50 }
+      ],
+      "relatedMarks": ["A-017", "M-005"],
+      "note": "船艉到中部的距离",
+      "createdAt": "2025-06-15T11:00:00.000Z"
+    }
+  ],
+  "scale": null,
+  "gridConfig": { "enabled": false, "size": 1, "showLabels": true },
+  "baseMap": null,
+  "revisitPlan": [],
+  "views": []
+}

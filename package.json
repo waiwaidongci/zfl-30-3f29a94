@@ -1,0 +1,32 @@
+{
+  "name": "zfl-30",
+  "version": "1.0.0",
+  "description": "## 使用说明",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:unit": "node scripts/run-unit-tests.mjs",
+    "test:all": "npm run test:unit && npm run test",
+    "install:browsers": "playwright install chromium"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waiwaidongci/zfl-30-3f29a94.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/waiwaidongci/zfl-30-3f29a94/issues"
+  },
+  "homepage": "https://github.com/waiwaidongci/zfl-30-3f29a94#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.0"
+  }
+}
