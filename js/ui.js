@@ -4704,6 +4704,7 @@ const UI = (() => {
         if (!isActive) {
           html += '<button class="project-switch-btn" data-id="' + p.id + '">切换</button>';
         }
+        html += '<button class="secondary project-history-btn" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">版本历史</button>';
         if (!isArchived) {
           html += '<button class="secondary project-rename-btn" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">重命名</button>';
           html += '<button class="secondary project-archive-btn" data-id="' + p.id + '">归档</button>';
@@ -4798,6 +4799,398 @@ const UI = (() => {
         }
       };
     });
+
+    modal.querySelectorAll(".project-history-btn").forEach(btn => {
+      btn.onclick = () => {
+        const projectId = btn.dataset.id;
+        const projectName = btn.dataset.name;
+        showSnapshotHistoryModal(projectId, projectName, modal, backdrop);
+      };
+    });
+  }
+
+  function showSnapshotHistoryModal(projectId, projectName, parentModal, parentBackdrop) {
+    if (typeof SnapshotModule === "undefined") {
+      showToast("快照模块未加载", "error");
+      return;
+    }
+
+    const originalProjectId = currentProject ? currentProject.id : null;
+    const isCurrentProject = originalProjectId === projectId;
+    SnapshotModule.setProjectId(projectId);
+
+    const timeline = callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline();
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal modal-snapshot-history";
+
+    renderSnapshotHistoryContent(modal, backdrop, projectId, projectName, isCurrentProject, timeline, originalProjectId, parentModal, parentBackdrop);
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        closeSnapshotHistory(backdrop, originalProjectId);
+      }
+    };
+  }
+
+  function closeSnapshotHistory(backdrop, originalProjectId) {
+    if (originalProjectId && typeof SnapshotModule !== "undefined") {
+      SnapshotModule.setProjectId(originalProjectId);
+    }
+    document.body.removeChild(backdrop);
+  }
+
+  function renderSnapshotHistoryContent(modal, backdrop, projectId, projectName, isCurrentProject, timeline, originalProjectId, parentModal, parentBackdrop) {
+    const entityNames = SnapshotModule.ENTITY_TYPE_NAMES || {};
+    const actionNames = SnapshotModule.ACTION_NAMES || {};
+
+    let html = '<h2>版本历史 - ' + escapeHtml(projectName) + '</h2>';
+
+    html += '<div class="snapshot-toolbar">';
+    html += '<button type="button" id="createSnapshotBtn" class="primary">创建快照</button>';
+    html += '<button type="button" id="importSnapshotBtn" class="secondary">导入快照</button>';
+    html += '<span class="muted" style="margin-left:auto;">共 ' + timeline.total + ' 个版本</span>';
+    html += '</div>';
+
+    html += '<div class="snapshot-stats">';
+    if (callbacks.onGetSnapshotStorageStats) {
+      const stats = callbacks.onGetSnapshotStorageStats();
+      if (stats) {
+        html += '<span>总大小: ' + (stats.totalSizeKB || 0) + ' KB</span>';
+        html += '<span>快照总数: ' + (stats.count || 0) + ' 个</span>';
+        if (timeline.items) {
+          const dataSnapshots = timeline.items.filter(s => s.hasData).length;
+          html += '<span>数据快照: ' + dataSnapshots + ' 个</span>';
+          html += '<span>变更记录: ' + (timeline.items.length - dataSnapshots) + ' 个</span>';
+        }
+      }
+    }
+    html += '</div>';
+
+    html += '<div class="snapshot-timeline">';
+    if (timeline.items.length === 0) {
+      html += '<div class="ma-empty-state">';
+      html += '<div class="ma-empty-icon">📋</div>';
+      html += '<div class="ma-empty-text">暂无版本历史</div>';
+      html += '</div>';
+    } else {
+      timeline.items.forEach(snapshot => {
+        const dateStr = new Date(snapshot.timestamp).toLocaleString("zh-CN");
+        const typeName = entityNames[snapshot.entityType] || snapshot.entityType || "项目";
+        const actionName = actionNames[snapshot.action] || snapshot.action || "更新";
+        const isCurrent = snapshot.isCurrent;
+
+        html += '<div class="snapshot-item' + (isCurrent ? ' snapshot-current' : '') + '" data-id="' + snapshot.id + '">';
+        html += '<div class="snapshot-item-header">';
+        html += '<div class="snapshot-item-title">';
+        if (isCurrent) {
+          html += '<span class="pill pill-new small">当前版本</span> ';
+        }
+        html += '<span class="snapshot-date">' + dateStr + '</span>';
+        html += '</div>';
+        html += '<div class="snapshot-item-actions">';
+        if (snapshot.hasData && !isCurrent) {
+          html += '<button class="secondary small snapshot-diff-btn" data-id="' + snapshot.id + '">对比</button>';
+          html += '<button class="secondary small snapshot-export-btn" data-id="' + snapshot.id + '">导出</button>';
+          html += '<button class="primary small snapshot-rollback-btn" data-id="' + snapshot.id + '">回滚</button>';
+        }
+        html += '<button class="secondary small snapshot-detail-btn" data-id="' + snapshot.id + '">详情</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="snapshot-item-description">';
+        html += '<span class="pill small">' + typeName + '</span> ';
+        html += '<span class="pill small">' + actionName + '</span> ';
+        html += escapeHtml(snapshot.description || "无描述");
+        if (snapshot.entityCode) {
+          html += ' · <code>' + escapeHtml(snapshot.entityCode) + '</code>';
+        }
+        html += '</div>';
+        if (snapshot.tags && snapshot.tags.length > 0) {
+          html += '<div class="snapshot-item-tags">';
+          snapshot.tags.forEach(tag => {
+            html += '<span class="pill small">' + escapeHtml(tag) + '</span> ';
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+    }
+    html += '</div>';
+
+    html += '<div class="toolbar" style="margin-top:16px;">';
+    html += '<button type="button" class="secondary" id="snapshotCloseBtn">返回项目管理</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+
+    modal.querySelector("#snapshotCloseBtn").onclick = () => {
+      closeSnapshotHistory(backdrop, originalProjectId);
+    };
+
+    const createBtn = modal.querySelector("#createSnapshotBtn");
+    if (createBtn) {
+      createBtn.onclick = () => {
+        const description = prompt("请输入快照描述（可选）:");
+        if (description !== null) {
+          if (callbacks.onCreateManualSnapshot) {
+            const snapshot = callbacks.onCreateManualSnapshot(description || "手动快照");
+            if (snapshot) {
+              showToast("快照已创建", "success");
+              const newTimeline = callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline();
+              renderSnapshotHistoryContent(modal, backdrop, projectId, projectName, isCurrentProject, newTimeline, originalProjectId, parentModal, parentBackdrop);
+            }
+          }
+        }
+      };
+    }
+
+    const importBtn = modal.querySelector("#importSnapshotBtn");
+    if (importBtn) {
+      importBtn.onclick = () => {
+        if (callbacks.onImportSnapshot) {
+          callbacks.onImportSnapshot();
+          const newTimeline = callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline();
+          renderSnapshotHistoryContent(modal, backdrop, projectId, projectName, isCurrentProject, newTimeline, originalProjectId, parentModal, parentBackdrop);
+        }
+      };
+    }
+
+    modal.querySelectorAll(".snapshot-detail-btn").forEach(btn => {
+      btn.onclick = () => {
+        const snapshotId = btn.dataset.id;
+        showSnapshotDetail(snapshotId, projectId, projectName);
+      };
+    });
+
+    modal.querySelectorAll(".snapshot-diff-btn").forEach(btn => {
+      btn.onclick = () => {
+        const snapshotId = btn.dataset.id;
+        showSnapshotDiff(snapshotId, projectId, projectName);
+      };
+    });
+
+    modal.querySelectorAll(".snapshot-export-btn").forEach(btn => {
+      btn.onclick = () => {
+        const snapshotId = btn.dataset.id;
+        if (callbacks.onExportSnapshot) {
+          callbacks.onExportSnapshot(snapshotId);
+        }
+      };
+    });
+
+    modal.querySelectorAll(".snapshot-rollback-btn").forEach(btn => {
+      btn.onclick = () => {
+        const snapshotId = btn.dataset.id;
+        const snapshot = callbacks.onGetSnapshotDetail ? callbacks.onGetSnapshotDetail(snapshotId) : SnapshotModule.getSnapshotById(snapshotId);
+        if (!snapshot) {
+          showToast("快照不存在", "error");
+          return;
+        }
+
+        const dateStr = new Date(snapshot.timestamp).toLocaleString("zh-CN");
+        if (!isCurrentProject) {
+          showToast("只能回滚当前项目的快照，请先切换到此项目", "warning");
+          return;
+        }
+
+        showRollbackNotice(dateStr, () => {
+          if (callbacks.onCheckRollbackConflicts) {
+            const conflicts = callbacks.onCheckRollbackConflicts(snapshotId);
+            if (conflicts && !conflicts.valid) {
+              showToast("回滚失败: " + conflicts.error, "error");
+              return;
+            }
+            if (conflicts && conflicts.conflicts && conflicts.conflicts.length > 0) {
+              const conflictCount = conflicts.conflicts.length;
+              if (!confirm(`检测到 ${conflictCount} 个潜在冲突：\n\n${conflicts.conflicts.slice(0, 5).map(c => "• " + c.description).join("\n")}${conflictCount > 5 ? "\n... 还有 " + (conflictCount - 5) + " 个冲突" : ""}\n\n确定要继续回滚吗？`)) {
+                return;
+              }
+            }
+          }
+
+          if (confirm("确定要回滚到此版本吗？回滚后当前数据将被替换，且会创建一个新快照记录此次回滚操作。")) {
+            if (callbacks.onRollbackToSnapshot) {
+              const result = callbacks.onRollbackToSnapshot(snapshotId);
+              if (result && result.success) {
+                showToast("回滚成功", "success");
+                closeSnapshotHistory(backdrop, originalProjectId);
+                if (parentModal && parentBackdrop) {
+                  document.body.removeChild(parentBackdrop);
+                }
+                render();
+              } else {
+                showToast("回滚失败: " + (result ? result.error : "未知错误"), "error");
+              }
+            }
+          }
+        });
+      };
+    });
+  }
+
+  function showSnapshotDetail(snapshotId, projectId, projectName) {
+    const snapshot = callbacks.onGetSnapshotDetail ? callbacks.onGetSnapshotDetail(snapshotId) : SnapshotModule.getSnapshotById(snapshotId);
+    if (!snapshot) {
+      showToast("快照不存在", "error");
+      return;
+    }
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    const dateStr = new Date(snapshot.timestamp).toLocaleString("zh-CN");
+    const entityNames = SnapshotModule.ENTITY_TYPE_NAMES || {};
+    const actionNames = SnapshotModule.ACTION_NAMES || {};
+    const typeName = entityNames[snapshot.entityType] || snapshot.entityType || "项目";
+    const actionName = actionNames[snapshot.action] || snapshot.action || "更新";
+
+    let html = '<h2>快照详情</h2>';
+    html += '<div class="snapshot-detail-header">';
+    html += '<div><b>项目:</b> ' + escapeHtml(projectName) + '</div>';
+    html += '<div><b>时间:</b> ' + dateStr + '</div>';
+    html += '<div><b>类型:</b> <span class="pill small">' + typeName + '</span> <span class="pill small">' + actionName + '</span></div>';
+    html += '<div><b>描述:</b> ' + escapeHtml(snapshot.description || "无描述") + '</div>';
+    if (snapshot.entityCode) {
+      html += '<div><b>关联编号:</b> <code>' + escapeHtml(snapshot.entityCode) + '</code></div>';
+    }
+    html += '</div>';
+
+    if (snapshot.data) {
+      html += '<div class="snapshot-data-section">';
+      html += '<h3>数据概要</h3>';
+      html += '<table class="report-table"><thead><tr><th>数据类型</th><th>数量</th></tr></thead><tbody>';
+      html += '<tr><td>标记</td><td>' + (snapshot.data.marks ? snapshot.data.marks.length : 0) + '</td></tr>';
+      html += '<tr><td>潜次</td><td>' + (snapshot.data.dives ? snapshot.data.dives.length : 0) + '</td></tr>';
+      html += '<tr><td>测距</td><td>' + (snapshot.data.measurements ? snapshot.data.measurements.length : 0) + '</td></tr>';
+      if (snapshot.data.views) html += '<tr><td>视图</td><td>' + snapshot.data.views.length + '</td></tr>';
+      if (snapshot.data.revisitPlan) html += '<tr><td>返潜计划</td><td>' + snapshot.data.revisitPlan.length + '</td></tr>';
+      html += '</tbody></table>';
+      html += '</div>';
+    }
+
+    if (snapshot.changeLog && snapshot.changeLog.length > 0) {
+      html += '<div class="snapshot-data-section">';
+      html += '<h3>变更记录 (' + snapshot.changeLog.length + ' 条)</h3>';
+      html += '<table class="report-table"><thead><tr><th>类型</th><th>操作</th><th>编号</th><th>说明</th></tr></thead><tbody>';
+      snapshot.changeLog.slice(0, 50).forEach(change => {
+        const cType = entityNames[change.entityType] || change.entityType;
+        const cAction = actionNames[change.action] || change.action;
+        html += '<tr>';
+        html += '<td>' + cType + '</td>';
+        html += '<td>' + cAction + '</td>';
+        html += '<td>' + (change.entityCode || "-") + '</td>';
+        html += '<td>' + escapeHtml(change.description || "-") + '</td>';
+        html += '</tr>';
+      });
+      if (snapshot.changeLog.length > 50) {
+        html += '<tr><td colspan="4" class="muted" style="text-align:center;">还有 ' + (snapshot.changeLog.length - 50) + ' 条变更记录</td></tr>';
+      }
+      html += '</tbody></table>';
+      html += '</div>';
+    }
+
+    html += '<div class="toolbar" style="margin-top:16px;">';
+    html += '<button type="button" class="secondary" id="snapshotDetailCloseBtn">关闭</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+      }
+    };
+
+    modal.querySelector("#snapshotDetailCloseBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
+  }
+
+  function showSnapshotDiff(snapshotId, projectId, projectName) {
+    const diff = callbacks.onGetSnapshotDiff ? callbacks.onGetSnapshotDiff(snapshotId, null) : SnapshotModule.getSnapshotDiff(snapshotId, null);
+    if (!diff) {
+      showToast("无法生成对比数据", "error");
+      return;
+    }
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    const snapshot = SnapshotModule.getSnapshotById(snapshotId);
+    const dateStr = snapshot ? new Date(snapshot.timestamp).toLocaleString("zh-CN") : "未知";
+
+    let html = '<h2>版本对比 - ' + escapeHtml(projectName) + '</h2>';
+    html += '<div class="muted" style="margin-bottom:16px;">对比快照版本（' + dateStr + '）与当前版本的差异</div>';
+
+    if (diff.summary) {
+      html += '<div class="report-summary-cards" style="margin-bottom:16px;">';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (diff.summary.added || 0) + '</div><div class="report-stat-label">新增</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (diff.summary.modified || 0) + '</div><div class="report-stat-label">修改</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (diff.summary.deleted || 0) + '</div><div class="report-stat-label">删除</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + (diff.summary.total || 0) + '</div><div class="report-stat-label">总计变化</div></div>';
+      html += '</div>';
+    }
+
+    if (diff.changes && diff.changes.length > 0) {
+      html += '<div class="snapshot-data-section">';
+      html += '<h3>变更详情</h3>';
+      html += '<table class="report-table"><thead><tr><th>类型</th><th>操作</th><th>编号</th><th>说明</th></tr></thead><tbody>';
+      const entityNames = SnapshotModule.ENTITY_TYPE_NAMES || {};
+      const actionNames = SnapshotModule.ACTION_NAMES || {};
+      diff.changes.forEach(change => {
+        const cType = entityNames[change.type] || change.type;
+        const cAction = actionNames[change.action] || change.action;
+        let actionClass = "";
+        if (change.action === "add" || change.action === "will_add") actionClass = "pill-new";
+        if (change.action === "delete" || change.action === "will_delete") actionClass = "pill-error";
+        if (change.action === "modify") actionClass = "pill-warning";
+        html += '<tr>';
+        html += '<td>' + cType + '</td>';
+        html += '<td><span class="pill small ' + actionClass + '">' + cAction + '</span></td>';
+        html += '<td>' + (change.entityCode || "-") + '</td>';
+        html += '<td>' + escapeHtml(change.description || "-") + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '</div>';
+    } else {
+      html += '<div class="ma-empty-state">';
+      html += '<div class="ma-empty-icon">✅</div>';
+      html += '<div class="ma-empty-text">当前版本与快照版本无差异</div>';
+      html += '</div>';
+    }
+
+    html += '<div class="toolbar" style="margin-top:16px;">';
+    html += '<button type="button" class="secondary" id="snapshotDiffCloseBtn">关闭</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
+      }
+    };
+
+    modal.querySelector("#snapshotDiffCloseBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
   }
 
   function showMultiAnalysisModal() {
@@ -5584,6 +5977,9 @@ const UI = (() => {
     getCurrentAttachments,
     showReportModal,
     showMultiAnalysisModal,
+    showSnapshotHistoryModal,
+    showSnapshotDetail,
+    showSnapshotDiff,
     updateProjectSelector,
     updateViewSelector,
     applyViewState,
