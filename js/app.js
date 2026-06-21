@@ -1071,553 +1071,338 @@ const App = (() => {
     }
   }
 
-  async function handleImport() {
-    try {
-      const file = await DataIO.triggerFileInput();
-      const text = await DataIO.readFileAsText(file);
-      const parsed = DataIO.parseJSON(text);
+  async function readAndParseJSONFile() {
+    const file = await DataIO.triggerFileInput();
+    const text = await DataIO.readFileAsText(file);
+    const parsed = DataIO.parseJSON(text);
+    if (!parsed.success) {
+      UI.showToast("JSON 解析失败: " + parsed.error, "error");
+      return null;
+    }
+    return parsed.data;
+  }
 
-      if (!parsed.success) {
-        UI.showToast("JSON 解析失败: " + parsed.error, "error");
-        return;
-      }
+  async function readAndParseCSVFile() {
+    const file = await DataIO.triggerCSVInput();
+    const text = await DataIO.readFileAsText(file);
+    const parsed = DataIO.parseCSVToMultiType(text);
+    if (!parsed.success) {
+      UI.showToast("CSV 解析失败: " + parsed.error, "error");
+      return null;
+    }
+    if (parsed.rows.length === 0) {
+      UI.showToast("CSV 文件中没有数据行", "error");
+      return null;
+    }
+    return parsed;
+  }
 
-      const isSnapshotExport = DataIO.isSnapshotExportFormat(parsed.data);
-      if (isSnapshotExport && typeof SnapshotModule !== "undefined") {
-        if (currentProject && currentProject.archived) {
-          UI.showToast("归档项目无法导入快照，请先恢复项目", "error");
-          return;
-        }
-        if (!confirm(`检测到快照导出文件：\n「${parsed.data.snapshotDescription || "未命名快照"}」\n\n导入后将添加到当前项目的版本历史中，您可以随后选择回滚到此快照。\n\n是否继续导入？`)) {
-          UI.showToast("已取消导入", "info");
-          return;
-        }
-        const result = SnapshotModule.importSnapshotData(parsed.data, { autoRollback: false });
-        if (result.success) {
-          UI.showToast("快照已导入到版本历史，可在项目管理中查看并回滚", "success");
-        } else {
-          UI.showToast(result.error || "快照导入失败", "error");
-        }
-        return;
-      }
+  function detectJSONFormat(data) {
+    const isSnapshot = DataIO.isSnapshotExportFormat(data);
+    const isOfflineMerge = DataIO.isOfflineMergeFormat(data);
+    const isFullFormat = DataIO.isFullDataFormat(data);
+    const isFullFormatV3 = DataIO.isFullDataFormatV3(data);
+    const isFullFormatV4 = DataIO.isFullDataFormatV4(data);
+    const isFullFormatV5 = DataIO.isFullDataFormatV5(data);
+    const isFullFormatV6 = DataIO.isFullDataFormatV6(data);
+    const isFullFormatV7 = DataIO.isFullDataFormatV7(data);
 
-      const isOfflineMerge = DataIO.isOfflineMergeFormat(parsed.data);
-      if (isOfflineMerge && typeof MergeModule !== "undefined") {
-        const localData = {
-          marks,
-          dives,
-          measurements,
-          scale,
-          gridConfig,
-        };
-        const analysis = MergeModule.analyzeMerge(localData, parsed.data);
-        UI.showMergePreview(
-          analysis,
-          (resolutions) => {
-            applyOfflineMerge(analysis, resolutions);
-          },
-          () => {
-            UI.showToast("已取消合并", "info");
-          }
-        );
-        return;
-      }
+    if (isSnapshot && typeof SnapshotModule !== "undefined") {
+      return { type: "snapshot", data };
+    }
+    if (isOfflineMerge && typeof MergeModule !== "undefined") {
+      return { type: "offline-merge", data };
+    }
+    if (isFullFormatV7) {
+      return { type: "full-v7", data, version: data.version || "7.0" };
+    }
+    if (isFullFormatV6) {
+      return { type: "full-v6", data, version: data.version || "6.0" };
+    }
+    if (isFullFormatV5) {
+      return { type: "full-v5", data, version: data.version || "5.0" };
+    }
+    if (isFullFormatV4) {
+      return { type: "full-v4", data, version: data.version || "4.0" };
+    }
+    if (isFullFormatV3) {
+      return { type: "full-v3", data, version: data.version || "2.0" };
+    }
+    if (isFullFormat) {
+      return { type: "full-legacy", data, version: "1.0" };
+    }
+    return { type: "marks-only", data };
+  }
 
-      const isFullFormat = DataIO.isFullDataFormat(parsed.data);
-      const isFullFormatV3 = DataIO.isFullDataFormatV3(parsed.data);
-      const isFullFormatV4 = DataIO.isFullDataFormatV4(parsed.data);
-      const isFullFormatV5 = DataIO.isFullDataFormatV5(parsed.data);
-      const isFullFormatV6 = DataIO.isFullDataFormatV6(parsed.data);
-      const isFullFormatV7 = DataIO.isFullDataFormatV7(parsed.data);
-      let comparison;
+  function buildFullFormatComparison(formatInfo) {
+    const { type, data, version } = formatInfo;
+    const markComparison = Validation.compareMarks(marks, data.marks || []);
+    const diveComparison = type !== "full-legacy" && type !== "marks-only"
+      ? Validation.compareDives(dives, data.dives || [])
+      : null;
+    const measurementComparison = type !== "full-legacy" && type !== "marks-only" && type !== "full-v3"
+      ? Validation.compareMeasurements(measurements, data.measurements || [])
+      : null;
 
-      if (isFullFormatV7) {
-        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
-        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
-        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
+    if (!markComparison.valid) {
+      UI.showToast(markComparison.errors[0], "error");
+      return null;
+    }
+    if (diveComparison && !diveComparison.valid) {
+      UI.showToast(diveComparison.errors[0], "error");
+      return null;
+    }
+    if (measurementComparison && !measurementComparison.valid) {
+      UI.showToast(measurementComparison.errors[0], "error");
+      return null;
+    }
 
-        if (!markComparison.valid) {
-          UI.showToast(markComparison.errors[0], "error");
-          return;
-        }
-        if (!diveComparison.valid) {
-          UI.showToast(diveComparison.errors[0], "error");
-          return;
-        }
-        if (!measurementComparison.valid) {
-          UI.showToast(measurementComparison.errors[0], "error");
-          return;
-        }
+    const comparison = {
+      isFullFormat: type !== "marks-only",
+      isFullFormatV3: type === "full-v3" || type === "full-v4" || type === "full-v5" || type === "full-v6" || type === "full-v7",
+      isFullFormatV4: type === "full-v4" || type === "full-v5" || type === "full-v6" || type === "full-v7",
+      isFullFormatV5: type === "full-v5" || type === "full-v6" || type === "full-v7",
+      isFullFormatV6: type === "full-v6" || type === "full-v7",
+      isFullFormatV7: type === "full-v7",
+      version: version,
+      marks: markComparison,
+      dives: diveComparison,
+      measurements: measurementComparison,
+      scale: data.scale,
+      gridConfig: data.gridConfig,
+      baseMap: data.baseMap,
+      revisitPlan: data.revisitPlan || [],
+    };
 
-        comparison = {
-          isFullFormat: true,
-          isFullFormatV3: true,
-          isFullFormatV4: true,
-          isFullFormatV5: true,
-          isFullFormatV6: true,
-          isFullFormatV7: true,
-          version: parsed.data.version || "7.0",
-          marks: markComparison,
-          dives: diveComparison,
-          measurements: measurementComparison,
-          scale: parsed.data.scale,
-          gridConfig: parsed.data.gridConfig,
-          baseMap: parsed.data.baseMap,
-          revisitPlan: parsed.data.revisitPlan || [],
-        };
-      } else if (isFullFormatV6) {
-        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
-        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
-        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
+    return comparison;
+  }
 
-        if (!markComparison.valid) {
-          UI.showToast(markComparison.errors[0], "error");
-          return;
-        }
-        if (!diveComparison.valid) {
-          UI.showToast(diveComparison.errors[0], "error");
-          return;
-        }
-        if (!measurementComparison.valid) {
-          UI.showToast(measurementComparison.errors[0], "error");
-          return;
-        }
+  function buildMarksOnlyComparison(data) {
+    const markComparison = Validation.compareMarks(marks, data);
+    if (!markComparison.valid) {
+      UI.showToast(markComparison.errors[0], "error");
+      return null;
+    }
+    return {
+      isFullFormat: false,
+      isFullFormatV3: false,
+      marks: markComparison,
+    };
+  }
 
-        comparison = {
-          isFullFormat: true,
-          isFullFormatV3: true,
-          isFullFormatV4: true,
-          isFullFormatV5: true,
-          isFullFormatV6: true,
-          version: parsed.data.version || "6.0",
-          marks: markComparison,
-          dives: diveComparison,
-          measurements: measurementComparison,
-          scale: parsed.data.scale,
-          gridConfig: parsed.data.gridConfig,
-        };
-      } else if (isFullFormatV5) {
-        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
-        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
-        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
-
-        if (!markComparison.valid) {
-          UI.showToast(markComparison.errors[0], "error");
-          return;
-        }
-        if (!diveComparison.valid) {
-          UI.showToast(diveComparison.errors[0], "error");
-          return;
-        }
-        if (!measurementComparison.valid) {
-          UI.showToast(measurementComparison.errors[0], "error");
-          return;
-        }
-
-        comparison = {
-          isFullFormat: true,
-          isFullFormatV3: true,
-          isFullFormatV4: true,
-          isFullFormatV5: true,
-          version: parsed.data.version || "5.0",
-          marks: markComparison,
-          dives: diveComparison,
-          measurements: measurementComparison,
-          scale: parsed.data.scale,
-          gridConfig: parsed.data.gridConfig,
-        };
-      } else if (isFullFormatV4) {
-        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
-        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
-        const measurementComparison = Validation.compareMeasurements(measurements, parsed.data.measurements || []);
-
-        if (!markComparison.valid) {
-          UI.showToast(markComparison.errors[0], "error");
-          return;
-        }
-        if (!diveComparison.valid) {
-          UI.showToast(diveComparison.errors[0], "error");
-          return;
-        }
-        if (!measurementComparison.valid) {
-          UI.showToast(measurementComparison.errors[0], "error");
-          return;
-        }
-
-        comparison = {
-          isFullFormat: true,
-          isFullFormatV3: true,
-          isFullFormatV4: true,
-          isFullFormatV5: false,
-          version: parsed.data.version || "4.0",
-          marks: markComparison,
-          dives: diveComparison,
-          measurements: measurementComparison,
-          scale: parsed.data.scale,
-          gridConfig: parsed.data.gridConfig,
-        };
-      } else if (isFullFormatV3) {
-        const markComparison = Validation.compareMarks(marks, parsed.data.marks || []);
-        const diveComparison = Validation.compareDives(dives, parsed.data.dives || []);
-
-        if (!markComparison.valid) {
-          UI.showToast(markComparison.errors[0], "error");
-          return;
-        }
-        if (!diveComparison.valid) {
-          UI.showToast(diveComparison.errors[0], "error");
-          return;
-        }
-
-        comparison = {
-          isFullFormat: true,
-          isFullFormatV3: false,
-          version: parsed.data.version || "2.0",
-          marks: markComparison,
-          dives: diveComparison,
-        };
-      } else {
-        const markComparison = Validation.compareMarks(marks, parsed.data);
-
-        if (!markComparison.valid) {
-          UI.showToast(markComparison.errors[0], "error");
-          return;
-        }
-
-        comparison = {
-          isFullFormat: false,
-          isFullFormatV3: false,
-          marks: markComparison,
-        };
-      }
-
-      UI.showImportPreview(
-        comparison,
-        (resolutions) => {
-          applyImport(comparison, resolutions);
-        },
-        () => {
-          UI.showToast("已取消导入", "info");
-        }
-      );
-    } catch (e) {
-      if (e.message !== "File selection cancelled") {
-        UI.showToast("导入失败: " + e.message, "error");
-      }
+  function handleSnapshotImport(data) {
+    if (currentProject && currentProject.archived) {
+      UI.showToast("归档项目无法导入快照，请先恢复项目", "error");
+      return;
+    }
+    if (!confirm(`检测到快照导出文件：\n「${data.snapshotDescription || "未命名快照"}」\n\n导入后将添加到当前项目的版本历史中，您可以随后选择回滚到此快照。\n\n是否继续导入？`)) {
+      UI.showToast("已取消导入", "info");
+      return;
+    }
+    const result = SnapshotModule.importSnapshotData(data, { autoRollback: false });
+    if (result.success) {
+      UI.showToast("快照已导入到版本历史，可在项目管理中查看并回滚", "success");
+    } else {
+      UI.showToast(result.error || "快照导入失败", "error");
     }
   }
 
-  async function handleImportCSV() {
-    try {
-      const file = await DataIO.triggerCSVInput();
-      const text = await DataIO.readFileAsText(file);
-      const parsed = DataIO.parseCSVToMultiType(text);
+  function handleOfflineMergeImport(data) {
+    const localData = {
+      marks,
+      dives,
+      measurements,
+      scale,
+      gridConfig,
+    };
+    const analysis = MergeModule.analyzeMerge(localData, data);
+    UI.showMergePreview(
+      analysis,
+      (resolutions) => {
+        applyOfflineMerge(analysis, resolutions);
+      },
+      () => {
+        UI.showToast("已取消合并", "info");
+      }
+    );
+  }
 
-      if (!parsed.success) {
-        UI.showToast("CSV 解析失败: " + parsed.error, "error");
-        return;
+  function remapCSVData(parsed, userMapping) {
+    const remappedMarks = [];
+    const remappedDives = [];
+    const remappedMeasurements = [];
+
+    parsed.rows.forEach((row, idx) => {
+      const mapped = {};
+      for (const [field, header] of Object.entries(userMapping)) {
+        if (header && row[header] !== undefined) {
+          mapped[field] = row[header];
+        }
       }
 
-      if (parsed.rows.length === 0) {
-        UI.showToast("CSV 文件中没有数据行", "error");
-        return;
+      const lineNumber = idx + 2;
+      const dataType = mapped.dataType ? DataIO.mapDataType(mapped.dataType) : null;
+
+      let detectedType = dataType;
+      if (!detectedType) {
+        const hasDiveFields = mapped.date || mapped.leader || mapped.objective;
+        const hasMeasurementFields = mapped.length || mapped.x1 || mapped.x2 || mapped.points;
+        const hasMarkFields = mapped.type || mapped.depth || mapped.orientation || mapped.condition;
+
+        if (hasDiveFields && !hasMeasurementFields && !hasMarkFields) {
+          detectedType = "dive";
+        } else if (hasMeasurementFields && !hasDiveFields && !hasMarkFields) {
+          detectedType = "measurement";
+        } else {
+          detectedType = "mark";
+        }
       }
 
-      UI.showCSVFieldMappingPreview(
-        parsed,
-        (userMapping) => {
-          const remappedMarks = [];
-          const remappedDives = [];
-          const remappedMeasurements = [];
+      if (detectedType === "dive") {
+        const participants = [];
+        if (mapped.participants && mapped.participants.trim()) {
+          const names = mapped.participants.split(/[;；,，]/).filter(n => n.trim());
+          names.forEach(name => {
+            participants.push({
+              name: name.trim(),
+              role: "",
+              equipment: "",
+            });
+          });
+        }
 
-          parsed.rows.forEach((row, idx) => {
-            const mapped = {};
-            for (const [field, header] of Object.entries(userMapping)) {
-              if (header && row[header] !== undefined) {
-                mapped[field] = row[header];
+        const dive = {
+          code: mapped.code ? mapped.code.trim() : "",
+          date: mapped.date ? mapped.date.trim() : "",
+          leader: mapped.leader ? mapped.leader.trim() : "",
+          weather: DataIO.mapWeather(mapped.weather),
+          current: DataIO.mapCurrent(mapped.current),
+          visibility: mapped.visibility ? mapped.visibility.trim() : "",
+          objective: mapped.objective ? mapped.objective.trim() : "",
+          participants,
+          _csvLineNumber: lineNumber,
+          _rawRow: { ...row },
+        };
+        remappedDives.push(dive);
+      } else if (detectedType === "measurement") {
+        const points = [];
+
+        if (mapped.points && mapped.points.trim()) {
+          const coordPairs = mapped.points.split(/[;；]/).filter(p => p.trim());
+          coordPairs.forEach(pair => {
+            const coords = pair.split(/[,，\s]+/).filter(c => c.trim());
+            if (coords.length >= 2) {
+              const x = DataIO.parseCoordinate(coords[0]);
+              const y = DataIO.parseCoordinate(coords[1]);
+              if (x !== null && y !== null) {
+                points.push({ x, y });
               }
-            }
-
-            const lineNumber = idx + 2;
-            const dataType = mapped.dataType ? DataIO.mapDataType(mapped.dataType) : null;
-
-            let detectedType = dataType;
-            if (!detectedType) {
-              const hasDiveFields = mapped.date || mapped.leader || mapped.objective;
-              const hasMeasurementFields = mapped.length || mapped.x1 || mapped.x2 || mapped.points;
-              const hasMarkFields = mapped.type || mapped.depth || mapped.orientation || mapped.condition;
-
-              if (hasDiveFields && !hasMeasurementFields && !hasMarkFields) {
-                detectedType = "dive";
-              } else if (hasMeasurementFields && !hasDiveFields && !hasMarkFields) {
-                detectedType = "measurement";
-              } else {
-                detectedType = "mark";
-              }
-            }
-
-            if (detectedType === "dive") {
-              const participants = [];
-              if (mapped.participants && mapped.participants.trim()) {
-                const names = mapped.participants.split(/[;；,，]/).filter(n => n.trim());
-                names.forEach(name => {
-                  participants.push({
-                    name: name.trim(),
-                    role: "",
-                    equipment: "",
-                  });
-                });
-              }
-
-              const dive = {
-                code: mapped.code ? mapped.code.trim() : "",
-                date: mapped.date ? mapped.date.trim() : "",
-                leader: mapped.leader ? mapped.leader.trim() : "",
-                weather: DataIO.mapWeather(mapped.weather),
-                current: DataIO.mapCurrent(mapped.current),
-                visibility: mapped.visibility ? mapped.visibility.trim() : "",
-                objective: mapped.objective ? mapped.objective.trim() : "",
-                participants,
-                _csvLineNumber: lineNumber,
-                _rawRow: { ...row },
-              };
-              remappedDives.push(dive);
-            } else if (detectedType === "measurement") {
-              const points = [];
-
-              if (mapped.points && mapped.points.trim()) {
-                const coordPairs = mapped.points.split(/[;；]/).filter(p => p.trim());
-                coordPairs.forEach(pair => {
-                  const coords = pair.split(/[,，\s]+/).filter(c => c.trim());
-                  if (coords.length >= 2) {
-                    const x = DataIO.parseCoordinate(coords[0]);
-                    const y = DataIO.parseCoordinate(coords[1]);
-                    if (x !== null && y !== null) {
-                      points.push({ x, y });
-                    }
-                  }
-                });
-              }
-
-              if (points.length < 2) {
-                const x1 = DataIO.parseCoordinate(mapped.x1);
-                const y1 = DataIO.parseCoordinate(mapped.y1);
-                const x2 = DataIO.parseCoordinate(mapped.x2);
-                const y2 = DataIO.parseCoordinate(mapped.y2);
-                if (x1 !== null && y1 !== null) {
-                  points.push({ x: x1, y: y1 });
-                }
-                if (x2 !== null && y2 !== null) {
-                  points.push({ x: x2, y: y2 });
-                }
-              }
-
-              const relatedMarks = [];
-              if (mapped.relatedMarks && mapped.relatedMarks.trim()) {
-                const codes = mapped.relatedMarks.split(/[;；,，]/).filter(c => c.trim());
-                relatedMarks.push(...codes.map(c => c.trim()));
-              }
-
-              const length = mapped.length ? DataIO.parseCoordinate(mapped.length) : null;
-
-              const measurement = {
-                code: mapped.code ? mapped.code.trim() : "",
-                dive: mapped.dive ? mapped.dive.trim() : "",
-                length: length || 0,
-                points,
-                relatedMarks,
-                _csvLineNumber: lineNumber,
-                _rawRow: { ...row },
-              };
-              remappedMeasurements.push(measurement);
-            } else {
-              const mark = {
-                code: mapped.code ? mapped.code.trim() : "",
-                type: DataIO.mapType(mapped.type),
-                dive: mapped.dive ? mapped.dive.trim() : "",
-                depth: mapped.depth ? mapped.depth.trim() : "",
-                orientation: mapped.orientation ? mapped.orientation.trim() : "",
-                condition: mapped.condition ? mapped.condition.trim() : "",
-                note: mapped.note ? mapped.note.trim() : "",
-                sampling: {
-                  sampleNo: mapped.sampleNo ? mapped.sampleNo.trim() : "",
-                  sampleMethod: mapped.sampleMethod ? mapped.sampleMethod.trim() : "",
-                  sampler: mapped.sampler ? mapped.sampler.trim() : "",
-                  sampleTime: mapped.sampleTime ? mapped.sampleTime.trim() : "",
-                },
-              };
-
-              if (mapped.x !== undefined) {
-                const x = DataIO.parseCoordinate(mapped.x);
-                if (x !== null) mark.x = x;
-              }
-              if (mapped.y !== undefined) {
-                const y = DataIO.parseCoordinate(mapped.y);
-                if (y !== null) mark.y = y;
-              }
-
-              mark._csvLineNumber = lineNumber;
-              mark._rawRow = { ...row };
-              remappedMarks.push(mark);
             }
           });
-
-          const remappedParseResult = {
-            ...parsed,
-            mapping: userMapping,
-            marks: remappedMarks,
-            dives: remappedDives,
-            measurements: remappedMeasurements,
-          };
-
-          const markComparison = remappedMarks.length > 0
-            ? Validation.compareCSVMarks(marks, { ...remappedParseResult, marks: remappedMarks })
-            : null;
-
-          const diveComparison = remappedDives.length > 0
-            ? Validation.compareCSVDives(dives, { ...remappedParseResult, dives: remappedDives })
-            : null;
-
-          const measurementComparison = remappedMeasurements.length > 0
-            ? Validation.compareCSVMeasurements(measurements, { ...remappedParseResult, measurements: remappedMeasurements })
-            : null;
-
-          const comparison = {
-            marks: markComparison,
-            dives: diveComparison,
-            measurements: measurementComparison,
-          };
-
-          UI.showCSVImportPreview(
-            remappedParseResult,
-            comparison,
-            (resolutions) => {
-              applyCSVImport(remappedParseResult, comparison, resolutions);
-            },
-            () => {
-              UI.showToast("已取消CSV导入", "info");
-            }
-          );
-        },
-        () => {
-          UI.showToast("已取消CSV导入", "info");
         }
-      );
-    } catch (e) {
-      if (e.message !== "File selection cancelled" && e.message !== "No file selected") {
-        UI.showToast("CSV导入失败: " + e.message, "error");
+
+        if (points.length < 2) {
+          const x1 = DataIO.parseCoordinate(mapped.x1);
+          const y1 = DataIO.parseCoordinate(mapped.y1);
+          const x2 = DataIO.parseCoordinate(mapped.x2);
+          const y2 = DataIO.parseCoordinate(mapped.y2);
+          if (x1 !== null && y1 !== null) {
+            points.push({ x: x1, y: y1 });
+          }
+          if (x2 !== null && y2 !== null) {
+            points.push({ x: x2, y: y2 });
+          }
+        }
+
+        const relatedMarks = [];
+        if (mapped.relatedMarks && mapped.relatedMarks.trim()) {
+          const codes = mapped.relatedMarks.split(/[;；,，]/).filter(c => c.trim());
+          relatedMarks.push(...codes.map(c => c.trim()));
+        }
+
+        const length = mapped.length ? DataIO.parseCoordinate(mapped.length) : null;
+
+        const measurement = {
+          code: mapped.code ? mapped.code.trim() : "",
+          dive: mapped.dive ? mapped.dive.trim() : "",
+          length: length || 0,
+          points,
+          relatedMarks,
+          _csvLineNumber: lineNumber,
+          _rawRow: { ...row },
+        };
+        remappedMeasurements.push(measurement);
+      } else {
+        const mark = {
+          code: mapped.code ? mapped.code.trim() : "",
+          type: DataIO.mapType(mapped.type),
+          dive: mapped.dive ? mapped.dive.trim() : "",
+          depth: mapped.depth ? mapped.depth.trim() : "",
+          orientation: mapped.orientation ? mapped.orientation.trim() : "",
+          condition: mapped.condition ? mapped.condition.trim() : "",
+          note: mapped.note ? mapped.note.trim() : "",
+          sampling: {
+            sampleNo: mapped.sampleNo ? mapped.sampleNo.trim() : "",
+            sampleMethod: mapped.sampleMethod ? mapped.sampleMethod.trim() : "",
+            sampler: mapped.sampler ? mapped.sampler.trim() : "",
+            sampleTime: mapped.sampleTime ? mapped.sampleTime.trim() : "",
+          },
+        };
+
+        if (mapped.x !== undefined) {
+          const x = DataIO.parseCoordinate(mapped.x);
+          if (x !== null) mark.x = x;
+        }
+        if (mapped.y !== undefined) {
+          const y = DataIO.parseCoordinate(mapped.y);
+          if (y !== null) mark.y = y;
+        }
+
+        mark._csvLineNumber = lineNumber;
+        mark._rawRow = { ...row };
+        remappedMarks.push(mark);
       }
-    }
+    });
+
+    return {
+      ...parsed,
+      mapping: userMapping,
+      marks: remappedMarks,
+      dives: remappedDives,
+      measurements: remappedMeasurements,
+    };
   }
 
-  function applyCSVImport(csvParseResult, comparison, resolutions) {
-    const { markResolutions, diveResolutions, measurementResolutions } = resolutions;
-    const { marks: markComparison, dives: diveComparison, measurements: measurementComparison } = comparison;
+  function buildCSVComparison(remappedParseResult) {
+    const { marks: remappedMarks, dives: remappedDives, measurements: remappedMeasurements } = remappedParseResult;
 
-    let updatedMarks = [...marks];
-    let updatedDives = [...dives];
-    let updatedMeasurements = [...measurements];
+    const markComparison = remappedMarks.length > 0
+      ? Validation.compareCSVMarks(marks, { ...remappedParseResult, marks: remappedMarks })
+      : null;
 
-    if (markComparison) {
-      const { newMarks, conflicts } = markComparison;
+    const diveComparison = remappedDives.length > 0
+      ? Validation.compareCSVDives(dives, { ...remappedParseResult, dives: remappedDives })
+      : null;
 
-      if (conflicts.length > 0) {
-        updatedMarks = Validation.resolveMarkConflicts(
-          updatedMarks,
-          conflicts,
-          markResolutions || []
-        );
-      }
+    const measurementComparison = remappedMeasurements.length > 0
+      ? Validation.compareCSVMeasurements(measurements, { ...remappedParseResult, measurements: remappedMeasurements })
+      : null;
 
-      if (newMarks.length > 0) {
-        updatedMarks = Validation.addNewMarks(updatedMarks, newMarks);
-      }
-    }
+    return {
+      marks: markComparison,
+      dives: diveComparison,
+      measurements: measurementComparison,
+    };
+  }
 
-    if (diveComparison) {
-      const { newDives, conflicts } = diveComparison;
-
-      if (conflicts.length > 0) {
-        updatedDives = Validation.resolveDiveConflicts(
-          updatedDives,
-          conflicts,
-          diveResolutions || []
-        );
-      }
-
-      if (newDives.length > 0) {
-        updatedDives = Validation.addNewDives(updatedDives, newDives);
-      }
-    }
-
-    if (measurementComparison) {
-      const { newMeasurements, conflicts } = measurementComparison;
-
-      if (conflicts.length > 0) {
-        updatedMeasurements = Validation.resolveMeasurementConflicts(
-          updatedMeasurements,
-          conflicts,
-          measurementResolutions || []
-        );
-      }
-
-      if (newMeasurements.length > 0) {
-        updatedMeasurements = Validation.addNewMeasurements(updatedMeasurements, newMeasurements);
-      }
-    }
-
-    marks = updatedMarks;
-    dives = updatedDives;
-    measurements = updatedMeasurements;
-
-    autoCreateDivesFromMarks();
-
-    save();
-    saveDives();
-    saveMeasurements();
-    saveScale();
-    saveGridConfig();
-    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
-
-    let message = "CSV导入完成：";
-    let parts = [];
-
-    if (markComparison) {
-      const markSummary = markComparison.summary;
-      const markAdded = markSummary.new + (markResolutions?.filter((r) => r === "saveas").length || 0);
-      const markOverwritten = markResolutions?.filter((r) => r === "overwrite").length || 0;
-      if (markAdded > 0) parts.push(`标记新增 ${markAdded} 项`);
-      if (markOverwritten > 0) parts.push(`标记覆盖 ${markOverwritten} 项`);
-      if (markSummary.error > 0) parts.push(`标记跳过 ${markSummary.error} 项错误`);
-    }
-
-    if (diveComparison) {
-      const diveSummary = diveComparison.summary;
-      const diveAdded = diveSummary.new + (diveResolutions?.filter((r) => r === "saveas").length || 0);
-      const diveOverwritten = diveResolutions?.filter((r) => r === "overwrite").length || 0;
-      if (diveAdded > 0) parts.push(`潜次新增 ${diveAdded} 项`);
-      if (diveOverwritten > 0) parts.push(`潜次覆盖 ${diveOverwritten} 项`);
-      if (diveSummary.error > 0) parts.push(`潜次跳过 ${diveSummary.error} 项错误`);
-    }
-
-    if (measurementComparison) {
-      const measurementSummary = measurementComparison.summary;
-      const measureAdded = measurementSummary.new + (measurementResolutions?.filter((r) => r === "saveas").length || 0);
-      const measureOverwritten = measurementResolutions?.filter((r) => r === "overwrite").length || 0;
-      if (measureAdded > 0) parts.push(`测距新增 ${measureAdded} 项`);
-      if (measureOverwritten > 0) parts.push(`测距覆盖 ${measureOverwritten} 项`);
-      if (measurementSummary.error > 0) parts.push(`测距跳过 ${measurementSummary.error} 项错误`);
-    }
-
-    UI.showToast(message + parts.join("，"), "success");
-
+  function saveImportErrors(source, comparison) {
     const newImportErrors = [];
     const now = new Date().toISOString();
 
-    if (markComparison && markComparison.errors && markComparison.errors.length > 0) {
-      markComparison.errors.forEach((err) => {
+    if (comparison.marks && comparison.marks.errors && comparison.marks.errors.length > 0) {
+      comparison.marks.errors.forEach((err) => {
         newImportErrors.push({
-          source: "csv",
+          source,
           category: "marks",
           importedAt: now,
           index: err.index,
@@ -1628,10 +1413,10 @@ const App = (() => {
       });
     }
 
-    if (diveComparison && diveComparison.errors && diveComparison.errors.length > 0) {
-      diveComparison.errors.forEach((err) => {
+    if (comparison.dives && comparison.dives.errors && comparison.dives.errors.length > 0) {
+      comparison.dives.errors.forEach((err) => {
         newImportErrors.push({
-          source: "csv",
+          source,
           category: "dives",
           importedAt: now,
           index: err.index,
@@ -1642,10 +1427,10 @@ const App = (() => {
       });
     }
 
-    if (measurementComparison && measurementComparison.errors && measurementComparison.errors.length > 0) {
-      measurementComparison.errors.forEach((err) => {
+    if (comparison.measurements && comparison.measurements.errors && comparison.measurements.errors.length > 0) {
+      comparison.measurements.errors.forEach((err) => {
         newImportErrors.push({
-          source: "csv",
+          source,
           category: "measurements",
           importedAt: now,
           index: err.index,
@@ -1657,109 +1442,11 @@ const App = (() => {
     }
 
     newImportErrors.sort((a, b) => (a.lineNumber || 0) - (b.lineNumber || 0));
-
     setImportErrors(newImportErrors);
-
-    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
-      const rowCount = csvParseResult?.rows?.length
-        || (markComparison?.summary ? markComparison.summary.new + markComparison.summary.exist + markComparison.summary.error : 0)
-        || 0;
-      SnapshotModule.handleImportSnapshot({ source: "csv", rows: rowCount }, "csv");
-    }
   }
 
-  function applyImport(comparison, resolutions) {
+  function buildImportMessage(comparison, resolutions) {
     const { markResolutions, diveResolutions, measurementResolutions } = resolutions;
-
-    let updatedMarks = [...marks];
-    let updatedDives = [...dives];
-    let updatedMeasurements = [...measurements];
-
-    if (comparison.dives) {
-      const { newDives, conflicts, summary } = comparison.dives;
-
-      if (conflicts.length > 0) {
-        updatedDives = Validation.resolveDiveConflicts(
-          updatedDives,
-          conflicts,
-          diveResolutions || []
-        );
-      }
-
-      if (newDives.length > 0) {
-        updatedDives = Validation.addNewDives(updatedDives, newDives);
-      }
-    }
-
-    if (comparison.marks) {
-      const { newMarks, conflicts, summary } = comparison.marks;
-
-      if (conflicts.length > 0) {
-        updatedMarks = Validation.resolveMarkConflicts(
-          updatedMarks,
-          conflicts,
-          markResolutions || []
-        );
-      }
-
-      if (newMarks.length > 0) {
-        updatedMarks = Validation.addNewMarks(updatedMarks, newMarks);
-      }
-    }
-
-    if (comparison.measurements) {
-      const { newMeasurements, conflicts, summary } = comparison.measurements;
-
-      if (conflicts.length > 0) {
-        updatedMeasurements = Validation.resolveMeasurementConflicts(
-          updatedMeasurements,
-          conflicts,
-          measurementResolutions || []
-        );
-      }
-
-      if (newMeasurements.length > 0) {
-        updatedMeasurements = Validation.addNewMeasurements(updatedMeasurements, newMeasurements);
-      }
-
-      if (comparison.scale) {
-        const scaleValidation = Validation.validateScale(comparison.scale);
-        if (scaleValidation.valid) {
-          scale = comparison.scale;
-        }
-      }
-
-      if (comparison.gridConfig) {
-        const gridValidation = Validation.validateGridConfig(comparison.gridConfig);
-        if (gridValidation.valid) {
-          gridConfig = comparison.gridConfig;
-        }
-      }
-
-      if (comparison.baseMap !== undefined) {
-        baseMap = comparison.baseMap;
-      }
-    }
-
-    if (comparison.revisitPlan && Array.isArray(comparison.revisitPlan)) {
-      revisitPlan = comparison.revisitPlan;
-    }
-
-    marks = updatedMarks;
-    dives = updatedDives;
-    measurements = updatedMeasurements;
-
-    autoCreateDivesFromMarks();
-
-    save();
-    saveDives();
-    saveMeasurements();
-    saveScale();
-    saveGridConfig();
-    saveBaseMap();
-    saveRevisitPlan();
-    UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap, revisitPlan);
-
     const markSummary = comparison.marks?.summary;
     const diveSummary = comparison.dives?.summary;
     const measurementSummary = comparison.measurements?.summary;
@@ -1791,74 +1478,141 @@ const App = (() => {
       if (measurementSummary.error > 0) parts.push(`测距跳过 ${measurementSummary.error} 项错误`);
     }
 
-    UI.showToast(message + parts.join("，"), "success");
+    return message + parts.join("，");
+  }
 
-    const newImportErrors = [];
-    const now = new Date().toISOString();
+  function buildCSVImportMessage(comparison, resolutions) {
+    const { markResolutions, diveResolutions, measurementResolutions } = resolutions;
+    const { marks: markComparison, dives: diveComparison, measurements: measurementComparison } = comparison;
 
-    if (comparison.marks && comparison.marks.errors && comparison.marks.errors.length > 0) {
-      comparison.marks.errors.forEach((err) => {
-        newImportErrors.push({
-          source: "json",
-          category: "marks",
-          importedAt: now,
-          index: err.index,
-          code: err.mark?.code || null,
-          errors: err.errors || [],
-        });
-      });
+    let message = "CSV导入完成：";
+    let parts = [];
+
+    if (markComparison) {
+      const markSummary = markComparison.summary;
+      const markAdded = markSummary.new + (markResolutions?.filter((r) => r === "saveas").length || 0);
+      const markOverwritten = markResolutions?.filter((r) => r === "overwrite").length || 0;
+      if (markAdded > 0) parts.push(`标记新增 ${markAdded} 项`);
+      if (markOverwritten > 0) parts.push(`标记覆盖 ${markOverwritten} 项`);
+      if (markSummary.error > 0) parts.push(`标记跳过 ${markSummary.error} 项错误`);
     }
 
-    if (comparison.dives && comparison.dives.errors && comparison.dives.errors.length > 0) {
-      comparison.dives.errors.forEach((err) => {
-        newImportErrors.push({
-          source: "json",
-          category: "dives",
-          importedAt: now,
-          index: err.index,
-          code: err.dive?.code || null,
-          errors: err.errors || [],
-        });
-      });
+    if (diveComparison) {
+      const diveSummary = diveComparison.summary;
+      const diveAdded = diveSummary.new + (diveResolutions?.filter((r) => r === "saveas").length || 0);
+      const diveOverwritten = diveResolutions?.filter((r) => r === "overwrite").length || 0;
+      if (diveAdded > 0) parts.push(`潜次新增 ${diveAdded} 项`);
+      if (diveOverwritten > 0) parts.push(`潜次覆盖 ${diveOverwritten} 项`);
+      if (diveSummary.error > 0) parts.push(`潜次跳过 ${diveSummary.error} 项错误`);
     }
 
-    if (comparison.measurements && comparison.measurements.errors && comparison.measurements.errors.length > 0) {
-      comparison.measurements.errors.forEach((err) => {
-        newImportErrors.push({
-          source: "json",
-          category: "measurements",
-          importedAt: now,
-          index: err.index,
-          code: err.measurement?.code || null,
-          errors: err.errors || [],
-        });
-      });
+    if (measurementComparison) {
+      const measurementSummary = measurementComparison.summary;
+      const measureAdded = measurementSummary.new + (measurementResolutions?.filter((r) => r === "saveas").length || 0);
+      const measureOverwritten = measurementResolutions?.filter((r) => r === "overwrite").length || 0;
+      if (measureAdded > 0) parts.push(`测距新增 ${measureAdded} 项`);
+      if (measureOverwritten > 0) parts.push(`测距覆盖 ${measureOverwritten} 项`);
+      if (measurementSummary.error > 0) parts.push(`测距跳过 ${measurementSummary.error} 项错误`);
     }
 
-    setImportErrors(newImportErrors);
+    return message + parts.join("，");
+  }
 
-    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
-      SnapshotModule.handleImportSnapshot(comparison, comparison.version || "7.0");
+  function refreshImportUI(includeRevisitPlan = false) {
+    save();
+    saveDives();
+    saveMeasurements();
+    saveScale();
+    saveGridConfig();
+    if (includeRevisitPlan) {
+      saveBaseMap();
+      saveRevisitPlan();
+      UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId, null, baseMap, revisitPlan);
+    } else {
+      UI.updateState(marks, dives, measurements, scale, gridConfig, pending, currentEditId);
     }
   }
 
-  function applyOfflineMerge(analysis, resolutions) {
-    if (typeof MergeModule === "undefined") return;
+  function resolveConflictsAndUpdateData(comparison, resolutions, isCSV = false) {
+    const { markResolutions, diveResolutions, measurementResolutions } = resolutions;
+    const { marks: markComparison, dives: diveComparison, measurements: measurementComparison } = comparison;
 
-    if (typeof UI.hideRollbackNotice === "function") {
-      UI.hideRollbackNotice();
+    let updatedMarks = [...marks];
+    let updatedDives = [...dives];
+    let updatedMeasurements = [...measurements];
+
+    if (markComparison) {
+      const { newMarks, conflicts } = markComparison;
+      if (conflicts.length > 0) {
+        updatedMarks = Validation.resolveMarkConflicts(
+          updatedMarks,
+          conflicts,
+          markResolutions || []
+        );
+      }
+      if (newMarks.length > 0) {
+        updatedMarks = Validation.addNewMarks(updatedMarks, newMarks);
+      }
     }
 
-    const localData = {
-      marks,
-      dives,
-      measurements,
-      scale,
-      gridConfig,
-    };
+    if (diveComparison) {
+      const { newDives, conflicts } = diveComparison;
+      if (conflicts.length > 0) {
+        updatedDives = Validation.resolveDiveConflicts(
+          updatedDives,
+          conflicts,
+          diveResolutions || []
+        );
+      }
+      if (newDives.length > 0) {
+        updatedDives = Validation.addNewDives(updatedDives, newDives);
+      }
+    }
 
-    const result = MergeModule.applyMerge(localData, analysis, resolutions);
+    if (measurementComparison) {
+      const { newMeasurements, conflicts } = measurementComparison;
+      if (conflicts.length > 0) {
+        updatedMeasurements = Validation.resolveMeasurementConflicts(
+          updatedMeasurements,
+          conflicts,
+          measurementResolutions || []
+        );
+      }
+      if (newMeasurements.length > 0) {
+        updatedMeasurements = Validation.addNewMeasurements(updatedMeasurements, newMeasurements);
+      }
 
+      if (!isCSV && comparison.scale) {
+        const scaleValidation = Validation.validateScale(comparison.scale);
+        if (scaleValidation.valid) {
+          scale = comparison.scale;
+        }
+      }
+
+      if (!isCSV && comparison.gridConfig) {
+        const gridValidation = Validation.validateGridConfig(comparison.gridConfig);
+        if (gridValidation.valid) {
+          gridConfig = comparison.gridConfig;
+        }
+      }
+
+      if (!isCSV && comparison.baseMap !== undefined) {
+        baseMap = comparison.baseMap;
+      }
+    }
+
+    if (!isCSV && comparison.revisitPlan && Array.isArray(comparison.revisitPlan)) {
+      revisitPlan = comparison.revisitPlan;
+    }
+
+    marks = updatedMarks;
+    dives = updatedDives;
+    measurements = updatedMeasurements;
+
+    autoCreateDivesFromMarks();
+  }
+
+  function checkMergeStorageCapacity(result, analysis) {
     const testData = {
       marks: result.marks,
       dives: result.dives,
@@ -1868,14 +1622,10 @@ const App = (() => {
       baseMap: analysis.baseMap || baseMap,
     };
     const estimatedSize = new Blob([JSON.stringify(testData)]).size;
-    const capacityCheck = DataIO.checkStorageCapacity(estimatedSize);
-    if (capacityCheck.willExceed) {
-      UI.showToast("合并失败：存储空间不足，请清理附件或导出备份后再试", "error");
-      return;
-    }
+    return DataIO.checkStorageCapacity(estimatedSize);
+  }
 
-    MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig, baseMap);
-
+  function applyMergeResult(result, analysis) {
     marks = result.marks;
     dives = result.dives;
     measurements = result.measurements;
@@ -1887,54 +1637,22 @@ const App = (() => {
     }
 
     autoCreateDivesFromMarks();
+  }
 
-    try {
-      save();
-    } catch (e) {
-      const snapshot = MergeModule.rollbackFromSnapshot();
-      if (snapshot) {
-        marks = snapshot.marks || [];
-        dives = snapshot.dives || [];
-        measurements = snapshot.measurements || [];
-        scale = snapshot.scale || null;
-        gridConfig = snapshot.gridConfig || { enabled: false, size: 1, showLabels: true };
-        baseMap = snapshot.baseMap !== undefined ? snapshot.baseMap : baseMap;
-      }
-      MergeModule.clearSnapshot();
-      UI.showToast("合并失败：保存数据时存储空间不足，已自动回滚", "error");
-      UI.updateState(
-        marks,
-        dives,
-        measurements,
-        scale,
-        gridConfig,
-        pending,
-        currentEditId,
-        currentEditMeasureId,
-        baseMap
-      );
-      return;
+  function rollbackFromMergeSnapshot() {
+    const snapshot = MergeModule.rollbackFromSnapshot();
+    if (snapshot) {
+      marks = snapshot.marks || [];
+      dives = snapshot.dives || [];
+      measurements = snapshot.measurements || [];
+      scale = snapshot.scale || null;
+      gridConfig = snapshot.gridConfig || { enabled: false, size: 1, showLabels: true };
+      baseMap = snapshot.baseMap !== undefined ? snapshot.baseMap : baseMap;
     }
+    MergeModule.clearSnapshot();
+  }
 
-    saveDives();
-    saveMeasurements();
-    saveScale();
-    saveGridConfig();
-    saveBaseMap();
-
-    UI.updateState(
-      marks,
-      dives,
-      measurements,
-      scale,
-      gridConfig,
-      pending,
-      currentEditId,
-      currentEditMeasureId,
-      baseMap
-    );
-
-    const summary = analysis.summary;
+  function buildMergeMessage(summary) {
     let parts = [];
 
     if (summary?.marks) {
@@ -1968,7 +1686,32 @@ const App = (() => {
       if (measAdded > 0) parts.push(`测距新增 ${measAdded} 项`);
     }
 
-    UI.showToast("合并完成：" + (parts.length > 0 ? parts.join("，") : "无变更"), capacityCheck.willWarn ? "warning" : "success");
+    return "合并完成：" + (parts.length > 0 ? parts.join("，") : "无变更");
+  }
+
+  function refreshOfflineMergeUI() {
+    saveDives();
+    saveMeasurements();
+    saveScale();
+    saveGridConfig();
+    saveBaseMap();
+
+    UI.updateState(
+      marks,
+      dives,
+      measurements,
+      scale,
+      gridConfig,
+      pending,
+      currentEditId,
+      currentEditMeasureId,
+      baseMap
+    );
+  }
+
+  function handleMergePostProcessing(analysis, capacityCheck) {
+    const message = buildMergeMessage(analysis.summary);
+    UI.showToast(message, capacityCheck.willWarn ? "warning" : "success");
 
     if (capacityCheck.willWarn) {
       setTimeout(() => {
@@ -1989,6 +1732,163 @@ const App = (() => {
       UI.showRollbackNotice(snapshot.timestamp, () => {
         rollbackFromMerge();
       });
+    }
+  }
+
+  function applyOfflineMerge(analysis, resolutions) {
+    if (typeof MergeModule === "undefined") return;
+
+    if (typeof UI.hideRollbackNotice === "function") {
+      UI.hideRollbackNotice();
+    }
+
+    const localData = {
+      marks,
+      dives,
+      measurements,
+      scale,
+      gridConfig,
+    };
+
+    const result = MergeModule.applyMerge(localData, analysis, resolutions);
+
+    const capacityCheck = checkMergeStorageCapacity(result, analysis);
+    if (capacityCheck.willExceed) {
+      UI.showToast("合并失败：存储空间不足，请清理附件或导出备份后再试", "error");
+      return;
+    }
+
+    MergeModule.saveSnapshot(marks, dives, measurements, scale, gridConfig, baseMap);
+
+    applyMergeResult(result, analysis);
+
+    try {
+      save();
+    } catch (e) {
+      rollbackFromMergeSnapshot();
+      UI.showToast("合并失败：保存数据时存储空间不足，已自动回滚", "error");
+      UI.updateState(
+        marks,
+        dives,
+        measurements,
+        scale,
+        gridConfig,
+        pending,
+        currentEditId,
+        currentEditMeasureId,
+        baseMap
+      );
+      return;
+    }
+
+    refreshOfflineMergeUI();
+    handleMergePostProcessing(analysis, capacityCheck);
+  }
+
+  async function handleImport() {
+    try {
+      const data = await readAndParseJSONFile();
+      if (!data) return;
+
+      const formatInfo = detectJSONFormat(data);
+
+      if (formatInfo.type === "snapshot") {
+        handleSnapshotImport(formatInfo.data);
+        return;
+      }
+
+      if (formatInfo.type === "offline-merge") {
+        handleOfflineMergeImport(formatInfo.data);
+        return;
+      }
+
+      let comparison;
+      if (formatInfo.type === "marks-only") {
+        comparison = buildMarksOnlyComparison(formatInfo.data);
+      } else {
+        comparison = buildFullFormatComparison(formatInfo);
+      }
+
+      if (!comparison) return;
+
+      UI.showImportPreview(
+        comparison,
+        (resolutions) => {
+          applyImport(comparison, resolutions);
+        },
+        () => {
+          UI.showToast("已取消导入", "info");
+        }
+      );
+    } catch (e) {
+      if (e.message !== "File selection cancelled") {
+        UI.showToast("导入失败: " + e.message, "error");
+      }
+    }
+  }
+
+  async function handleImportCSV() {
+    try {
+      const parsed = await readAndParseCSVFile();
+      if (!parsed) return;
+
+      UI.showCSVFieldMappingPreview(
+        parsed,
+        (userMapping) => {
+          const remappedParseResult = remapCSVData(parsed, userMapping);
+          const comparison = buildCSVComparison(remappedParseResult);
+
+          UI.showCSVImportPreview(
+            remappedParseResult,
+            comparison,
+            (resolutions) => {
+              applyCSVImport(remappedParseResult, comparison, resolutions);
+            },
+            () => {
+              UI.showToast("已取消CSV导入", "info");
+            }
+          );
+        },
+        () => {
+          UI.showToast("已取消CSV导入", "info");
+        }
+      );
+    } catch (e) {
+      if (e.message !== "File selection cancelled" && e.message !== "No file selected") {
+        UI.showToast("CSV导入失败: " + e.message, "error");
+      }
+    }
+  }
+
+  function applyCSVImport(csvParseResult, comparison, resolutions) {
+    resolveConflictsAndUpdateData(comparison, resolutions, true);
+    refreshImportUI(false);
+
+    const message = buildCSVImportMessage(comparison, resolutions);
+    UI.showToast(message, "success");
+
+    saveImportErrors("csv", comparison);
+
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
+      const { marks: markComparison } = comparison;
+      const rowCount = csvParseResult?.rows?.length
+        || (markComparison?.summary ? markComparison.summary.new + markComparison.summary.exist + markComparison.summary.error : 0)
+        || 0;
+      SnapshotModule.handleImportSnapshot({ source: "csv", rows: rowCount }, "csv");
+    }
+  }
+
+  function applyImport(comparison, resolutions) {
+    resolveConflictsAndUpdateData(comparison, resolutions, false);
+    refreshImportUI(true);
+
+    const message = buildImportMessage(comparison, resolutions);
+    UI.showToast(message, "success");
+
+    saveImportErrors("json", comparison);
+
+    if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
+      SnapshotModule.handleImportSnapshot(comparison, comparison.version || "7.0");
     }
   }
 
