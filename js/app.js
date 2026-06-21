@@ -1171,8 +1171,11 @@ const App = (() => {
       scale: data.scale,
       gridConfig: data.gridConfig,
       baseMap: data.baseMap,
-      revisitPlan: data.revisitPlan || [],
     };
+
+    if (Object.prototype.hasOwnProperty.call(data, "revisitPlan")) {
+      comparison.revisitPlan = Array.isArray(data.revisitPlan) ? data.revisitPlan : [];
+    }
 
     return comparison;
   }
