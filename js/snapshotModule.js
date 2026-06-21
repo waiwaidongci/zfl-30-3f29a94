@@ -203,27 +203,16 @@ const SnapshotModule = (() => {
   }
 
   function recordChange(entityType, action, entityId, entityCode, beforeData, afterData, metadata = {}) {
-    _pendingChanges++;
-
-    if (_pendingChanges >= SNAPSHOT_AUTO_THRESHOLD ||
-        action === "delete" ||
-        entityType === "scale" ||
-        entityType === "grid" ||
-        entityType === "projectConfig" ||
-        entityType === "baseMap") {
-      return recordSnapshot({
-        entityType,
-        action,
-        entityId,
-        entityCode,
-        beforeData,
-        afterData,
-        metadata,
-        auto: true,
-      });
-    }
-
-    return null;
+    return recordSnapshot({
+      entityType,
+      action,
+      entityId,
+      entityCode,
+      beforeData,
+      afterData,
+      metadata,
+      auto: true,
+    });
   }
 
   function recordManualSnapshot(description, tags = []) {

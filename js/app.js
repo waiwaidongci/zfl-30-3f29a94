@@ -1661,7 +1661,10 @@ const App = (() => {
     setImportErrors(newImportErrors);
 
     if (typeof SnapshotModule !== "undefined" && typeof SnapshotModule.handleImportSnapshot === "function") {
-      SnapshotModule.handleImportSnapshot({ source: "csv", rows: parsed.rows.length }, "csv");
+      const rowCount = csvParseResult?.rows?.length
+        || (markComparison?.summary ? markComparison.summary.new + markComparison.summary.exist + markComparison.summary.error : 0)
+        || 0;
+      SnapshotModule.handleImportSnapshot({ source: "csv", rows: rowCount }, "csv");
     }
   }
 
