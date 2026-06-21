@@ -3784,6 +3784,7 @@ const UI = (() => {
   }
 
   const CSV_FIELD_LABELS = {
+    dataType: "数据类型",
     code: "编号",
     type: "类型",
     dive: "潜次",
@@ -3797,12 +3798,41 @@ const UI = (() => {
     sampleMethod: "采样方式",
     sampler: "采样人",
     sampleTime: "采样时间",
+    date: "日期",
+    leader: "负责人",
+    weather: "天气",
+    current: "水流",
+    visibility: "能见度",
+    objective: "任务目标",
+    participants: "参与人员",
+    length: "长度",
+    x1: "起点X坐标",
+    y1: "起点Y坐标",
+    x2: "终点X坐标",
+    y2: "终点Y坐标",
+    points: "坐标点序列",
+    relatedMarks: "关联标记",
+  };
+
+  const CSV_FIELDS_BY_TYPE = {
+    common: ["dataType", "code", "dive"],
+    mark: ["type", "depth", "x", "y", "orientation", "condition", "note", "sampleNo", "sampleMethod", "sampler", "sampleTime"],
+    dive: ["date", "leader", "weather", "current", "visibility", "objective", "participants"],
+    measurement: ["length", "x1", "y1", "x2", "y2", "points", "relatedMarks"],
   };
 
   const CSV_FIELDS_ORDER = [
+    "dataType",
     "code",
     "type",
     "dive",
+    "date",
+    "leader",
+    "weather",
+    "current",
+    "visibility",
+    "objective",
+    "participants",
     "depth",
     "x",
     "y",
@@ -3813,10 +3843,28 @@ const UI = (() => {
     "sampleMethod",
     "sampler",
     "sampleTime",
+    "length",
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "points",
+    "relatedMarks",
   ];
 
+  function getFieldRequiredInfo(field, dataType) {
+    const markRequired = ["code", "type", "dive", "depth"];
+    const diveRequired = ["code", "date", "leader", "visibility", "objective"];
+    const measurementRequired = ["code", "dive", "length"];
+
+    if (dataType === "mark" && markRequired.includes(field)) return true;
+    if (dataType === "dive" && diveRequired.includes(field)) return true;
+    if (dataType === "measurement" && measurementRequired.includes(field)) return true;
+    return false;
+  }
+
   function showCSVFieldMappingPreview(csvParseResult, onConfirm, onCancel) {
-    const { headers, mapping, rows } = csvParseResult;
+    const { headers, mapping, rows, marks = [], dives = [], measurements = [] } = csvParseResult;
     const currentMapping = { ...mapping };
 
     const backdrop = document.createElement("div");
@@ -3825,32 +3873,58 @@ const UI = (() => {
     const modal = document.createElement("div");
     modal.className = "modal modal-csv";
 
+    const hasMarks = marks.length > 0;
+    const hasDives = dives.length > 0;
+    const hasMeasurements = measurements.length > 0;
+
     let html = "<h2>CSV 字段映射</h2>";
     html += '<div class="muted" style="margin-bottom:16px;">请确认 CSV 列与系统字段的对应关系，可通过下拉菜单调整。</div>';
 
-    html += '<div class="csv-mapping-section">';
-    html += '<h3>字段映射</h3>';
-    html += '<div class="csv-mapping-grid">';
-    CSV_FIELDS_ORDER.forEach((field) => {
-      const label = CSV_FIELD_LABELS[field];
-      const isRequired = ["code", "type", "dive", "depth"].includes(field);
-      const currentHeader = currentMapping[field] || "";
+    html += '<div class="summary-bar">';
+    html += '<span class="pill">共 ' + rows.length + ' 行数据</span>';
+    if (hasMarks) html += '<span class="pill pill-mark">标记 ' + marks.length + ' 项</span>';
+    if (hasDives) html += '<span class="pill pill-dive">潜次 ' + dives.length + ' 项</span>';
+    if (hasMeasurements) html += '<span class="pill pill-measurement">测距 ' + measurements.length + ' 项</span>';
+    html += '</div>';
 
-      html += '<div class="csv-mapping-row">';
-      html += '<div class="csv-mapping-label">';
-      html += '<span>' + label + '</span>';
-      if (isRequired) html += '<span class="csv-required">*</span>';
-      html += '</div>';
-      html += '<select data-mapping-field="' + field + '">';
-      html += '<option value="">-- 不映射 --</option>';
-      headers.forEach((h) => {
-        html += '<option value="' + escapeHtml(h) + '"' + (currentHeader === h ? " selected" : "") + ">" + escapeHtml(h) + "</option>";
+    const typeSections = [];
+    if (hasMarks) typeSections.push({ type: "common", title: "通用字段" });
+    if (hasMarks) typeSections.push({ type: "mark", title: "标记字段" });
+    if (hasDives) typeSections.push({ type: "dive", title: "潜次字段" });
+    if (hasMeasurements) typeSections.push({ type: "measurement", title: "测距字段" });
+
+    const seenFields = new Set();
+    typeSections.forEach((section) => {
+      const fields = CSV_FIELDS_BY_TYPE[section.type] || [];
+      const visibleFields = fields.filter(f => !seenFields.has(f));
+      visibleFields.forEach(f => seenFields.add(f));
+
+      if (visibleFields.length === 0) return;
+
+      html += '<div class="csv-mapping-section">';
+      html += '<h3 class="csv-section-title csv-section-' + section.type + '">' + section.title + '</h3>';
+      html += '<div class="csv-mapping-grid">';
+      visibleFields.forEach((field) => {
+        const label = CSV_FIELD_LABELS[field];
+        const isRequired = getFieldRequiredInfo(field, section.type);
+        const currentHeader = currentMapping[field] || "";
+
+        html += '<div class="csv-mapping-row" data-field-type="' + section.type + '">';
+        html += '<div class="csv-mapping-label">';
+        html += '<span>' + label + '</span>';
+        if (isRequired) html += '<span class="csv-required">*</span>';
+        html += '</div>';
+        html += '<select data-mapping-field="' + field + '">';
+        html += '<option value="">-- 不映射 --</option>';
+        headers.forEach((h) => {
+          html += '<option value="' + escapeHtml(h) + '"' + (currentHeader === h ? " selected" : "") + ">" + escapeHtml(h) + "</option>";
+        });
+        html += "</select>";
+        html += "</div>";
       });
-      html += "</select>";
+      html += "</div>";
       html += "</div>";
     });
-    html += "</div>";
-    html += "</div>";
 
     html += '<div class="csv-preview-section">';
     html += '<h3>数据预览（前 ' + Math.min(rows.length, 5) + ' 行）</h3>';
@@ -3910,43 +3984,12 @@ const UI = (() => {
     };
   }
 
-  function showCSVImportPreview(csvParseResult, comparison, onConfirm, onCancel) {
-    const { headers, mapping } = csvParseResult;
-    const markResolutions = (comparison.conflicts || []).map(() => "keep");
-
-    const backdrop = document.createElement("div");
-    backdrop.className = "modal-backdrop";
-
-    const modal = document.createElement("div");
-    modal.className = "modal";
-
-    let html = "<h2>CSV 导入预览</h2>";
-
-    html += '<div class="summary-bar">';
-    html += '<span class="pill">CSV 格式</span>';
-    html += '<span class="pill">共 ' + comparison.summary.total + " 条记录</span>";
-    html += "</div>";
+  function renderCSVMarkSection(markComparison) {
+    let html = "";
+    if (!markComparison) return html;
 
     html += '<div class="preview-section">';
-    html += '<h3>字段映射</h3>';
-    html += '<div class="csv-mapping-summary">';
-    CSV_FIELDS_ORDER.forEach((field) => {
-      const label = CSV_FIELD_LABELS[field];
-      const mappedHeader = mapping[field] || "未映射";
-      const isRequired = ["code", "type", "dive", "depth"].includes(field);
-      html += '<div class="csv-mapping-summary-item">';
-      html += '<span class="csv-mapping-field-label">' + label + (isRequired ? "*" : "") + "</span>";
-      html += '<span class="csv-mapping-arrow">→</span>';
-      html += '<span class="csv-mapping-header ' + (mapping[field] ? "" : "csv-unmapped") + '">' + escapeHtml(mappedHeader) + "</span>";
-      html += "</div>";
-    });
-    html += "</div>";
-    html += "</div>";
-
-    const markComparison = comparison;
-
-    html += '<div class="preview-section">';
-    html += '<h3>标记数据</h3>';
+    html += '<h3 class="csv-section-title csv-section-mark">标记数据</h3>';
     html += '<div class="summary-bar">';
     html += '<span class="pill">共 ' + markComparison.summary.total + " 项</span>";
     html += '<span class="pill pill-new">新增 ' + markComparison.summary.new + " 项</span>";
@@ -3954,7 +3997,7 @@ const UI = (() => {
     html += '<span class="pill pill-error">错误 ' + markComparison.summary.error + " 项</span>";
     html += "</div>";
 
-    if (markComparison.newMarks.length > 0) {
+    if (markComparison.newMarks && markComparison.newMarks.length > 0) {
       html += '<div class="preview-list">';
       markComparison.newMarks.forEach((mark) => {
         const sampleNo = mark.sampling?.sampleNo;
@@ -3984,7 +4027,7 @@ const UI = (() => {
       html += "</div>";
     }
 
-    if (markComparison.conflicts.length > 0) {
+    if (markComparison.conflicts && markComparison.conflicts.length > 0) {
       html += '<div class="toolbar-3">';
       html += '<button type="button" class="secondary" data-bulk-mark-csv="keep">全部保留本地</button>';
       html += '<button type="button" class="secondary" data-bulk-mark-csv="overwrite">全部覆盖本地</button>';
@@ -3999,41 +4042,17 @@ const UI = (() => {
           if (diff.statusChanged) {
             reviewDiffHtml += '<div class="review-diff-row">';
             reviewDiffHtml += '<span class="muted small">状态:</span>';
-            reviewDiffHtml +=
-              '<span class="pill pill-review pill-review-' +
-              diff.localStatus +
-              '">本地:' +
-              reviewStatusNames[diff.localStatus] +
-              "</span>";
+            reviewDiffHtml += '<span class="pill pill-review pill-review-' + diff.localStatus + '">本地:' + reviewStatusNames[diff.localStatus] + "</span>";
             reviewDiffHtml += '<span class="review-arrow">→</span>';
-            reviewDiffHtml +=
-              '<span class="pill pill-review pill-review-' +
-              diff.importedStatus +
-              '">导入:' +
-              reviewStatusNames[diff.importedStatus] +
-              "</span>";
+            reviewDiffHtml += '<span class="pill pill-review pill-review-' + diff.importedStatus + '">导入:' + reviewStatusNames[diff.importedStatus] + "</span>";
             reviewDiffHtml += "</div>";
           }
           if (diff.commentChanged) {
             reviewDiffHtml += '<div class="review-diff-row">';
             reviewDiffHtml += '<span class="muted small">意见:</span>';
-            reviewDiffHtml +=
-              '<span class="conflict-local-val" title="' +
-              escapeHtml(diff.localComment || "无") +
-              '">本地: ' +
-              escapeHtml((diff.localComment && diff.localComment.length > 20)
-                ? diff.localComment.slice(0, 20) + "..."
-                : diff.localComment || "无") +
-              "</span>";
+            reviewDiffHtml += '<span class="conflict-local-val" title="' + escapeHtml(diff.localComment || "无") + '">本地: ' + escapeHtml((diff.localComment && diff.localComment.length > 20) ? diff.localComment.slice(0, 20) + "..." : diff.localComment || "无") + "</span>";
             reviewDiffHtml += '<span class="review-arrow">→</span>';
-            reviewDiffHtml +=
-              '<span class="conflict-imported-val" title="' +
-              escapeHtml(diff.importedComment || "无") +
-              '">导入: ' +
-              escapeHtml((diff.importedComment && diff.importedComment.length > 20)
-                ? diff.importedComment.slice(0, 20) + "..."
-                : diff.importedComment || "无") +
-              "</span>";
+            reviewDiffHtml += '<span class="conflict-imported-val" title="' + escapeHtml(diff.importedComment || "无") + '">导入: ' + escapeHtml((diff.importedComment && diff.importedComment.length > 20) ? diff.importedComment.slice(0, 20) + "..." : diff.importedComment || "无") + "</span>";
             reviewDiffHtml += "</div>";
           }
           if (diff.reviewerChanged) {
@@ -4059,9 +4078,7 @@ const UI = (() => {
           samplingDetail = '<div class="preview-item-detail muted small">' + parts.join(' · ') + '</div>';
         }
         html +=
-          '<div class="preview-item preview-item-conflict" data-mark-conflict-csv-index="' +
-          idx +
-          '"><div class="preview-item-main"><span><b>' +
+          '<div class="preview-item preview-item-conflict" data-mark-conflict-csv-index="' + idx + '"><div class="preview-item-main"><span><b>' +
           escapeHtml(conflict.imported.code) +
           "</b> " +
           escapeHtml(typeNames[conflict.imported.type] || conflict.imported.type) +
@@ -4078,23 +4095,208 @@ const UI = (() => {
       html += "</div>";
     }
 
-    if (markComparison.errors.length > 0) {
+    if (markComparison.errors && markComparison.errors.length > 0) {
       html += '<div class="preview-list">';
       markComparison.errors.forEach((err) => {
         const lineInfo = err.lineNumber ? " (第 " + err.lineNumber + " 行)" : "";
         const code = err.mark && err.mark.code ? err.mark.code : "第 " + (err.index + 1) + " 项";
-        html +=
-          '<div class="preview-item"><span><b>' +
-          escapeHtml(code) +
-          "</b>" +
-          lineInfo +
-          "</span><span class='muted'>" +
-          escapeHtml(err.errors.join("; ")) +
-          "</span></div>";
+        html += '<div class="preview-item"><span><b>' + escapeHtml(code) + "</b>" + lineInfo + "</span><span class='muted'>" + escapeHtml(err.errors.join("; ")) + "</span></div>";
       });
       html += "</div>";
     }
     html += "</div>";
+
+    return html;
+  }
+
+  function renderCSVDiveSection(diveComparison) {
+    let html = "";
+    if (!diveComparison) return html;
+
+    html += '<div class="preview-section">';
+    html += '<h3 class="csv-section-title csv-section-dive">潜次数据</h3>';
+    html += '<div class="summary-bar">';
+    html += '<span class="pill">共 ' + diveComparison.summary.total + " 项</span>";
+    html += '<span class="pill pill-new">新增 ' + diveComparison.summary.new + " 项</span>";
+    html += '<span class="pill pill-conflict">冲突 ' + diveComparison.summary.conflict + " 项</span>";
+    html += '<span class="pill pill-error">错误 ' + diveComparison.summary.error + " 项</span>";
+    html += "</div>";
+
+    if (diveComparison.newDives && diveComparison.newDives.length > 0) {
+      html += '<div class="preview-list">';
+      diveComparison.newDives.forEach((dive) => {
+        html += '<div class="preview-item"><div><span><b>' + escapeHtml(dive.code) + "</b> " + escapeHtml(dive.date || "") + ' · ' + escapeHtml(dive.leader || "") + "</span><span class='pill pill-new'>新增</span></div>";
+        if (dive.objective) {
+          html += '<div class="preview-item-detail muted small">' + escapeHtml(dive.objective) + '</div>';
+        }
+        html += "</div>";
+      });
+      html += "</div>";
+    }
+
+    if (diveComparison.conflicts && diveComparison.conflicts.length > 0) {
+      html += '<div class="toolbar-3">';
+      html += '<button type="button" class="secondary" data-bulk-dive-csv="keep">全部保留本地</button>';
+      html += '<button type="button" class="secondary" data-bulk-dive-csv="overwrite">全部覆盖本地</button>';
+      html += '<button type="button" class="secondary" data-bulk-dive-csv="saveas">全部另存新编号</button>';
+      html += "</div>";
+      html += '<div class="preview-list">';
+      diveComparison.conflicts.forEach((conflict, idx) => {
+        html += '<div class="preview-item preview-item-conflict" data-dive-conflict-csv-index="' + idx + '"><div class="preview-item-main"><span><b>' + escapeHtml(conflict.imported.code) + "</b> " + escapeHtml(conflict.imported.date || "") + ' · ' + escapeHtml(conflict.imported.leader || "") + "</span>";
+        html += '<select data-dive-csv-resolution-index="' + idx + '">';
+        html += '<option value="keep">保留本地</option>';
+        html += '<option value="overwrite">覆盖本地</option>';
+        html += '<option value="saveas">另存为新编号</option>';
+        html += "</select></div>";
+        if (conflict.imported.objective) {
+          html += '<div class="preview-item-detail muted small">' + escapeHtml(conflict.imported.objective) + '</div>';
+        }
+        html += "</div>";
+      });
+      html += "</div>";
+    }
+
+    if (diveComparison.errors && diveComparison.errors.length > 0) {
+      html += '<div class="preview-list">';
+      diveComparison.errors.forEach((err) => {
+        const lineInfo = err.lineNumber ? " (第 " + err.lineNumber + " 行)" : "";
+        const code = err.dive && err.dive.code ? err.dive.code : "第 " + (err.index + 1) + " 项";
+        html += '<div class="preview-item"><span><b>' + escapeHtml(code) + "</b>" + lineInfo + "</span><span class='muted'>" + escapeHtml(err.errors.join("; ")) + "</span></div>";
+      });
+      html += "</div>";
+    }
+    html += "</div>";
+
+    return html;
+  }
+
+  function renderCSVMeasurementSection(measurementComparison) {
+    let html = "";
+    if (!measurementComparison) return html;
+
+    html += '<div class="preview-section">';
+    html += '<h3 class="csv-section-title csv-section-measurement">测距数据</h3>';
+    html += '<div class="summary-bar">';
+    html += '<span class="pill">共 ' + measurementComparison.summary.total + " 项</span>";
+    html += '<span class="pill pill-new">新增 ' + measurementComparison.summary.new + " 项</span>";
+    html += '<span class="pill pill-conflict">冲突 ' + measurementComparison.summary.conflict + " 项</span>";
+    html += '<span class="pill pill-error">错误 ' + measurementComparison.summary.error + " 项</span>";
+    html += "</div>";
+
+    if (measurementComparison.newMeasurements && measurementComparison.newMeasurements.length > 0) {
+      html += '<div class="preview-list">';
+      measurementComparison.newMeasurements.forEach((measurement) => {
+        html += '<div class="preview-item"><div><span><b>' + escapeHtml(measurement.code) + "</b> " + escapeHtml(measurement.dive || "") + ' · ' + (measurement.length ? measurement.length + "m" : "") + "</span><span class='pill pill-new'>新增</span></div>";
+        if (measurement.points && measurement.points.length >= 2) {
+          html += '<div class="preview-item-detail muted small">';
+          html += '点: ' + measurement.points.map(p => `(${p.x},${p.y})`).join(' → ');
+          if (measurement.relatedMarks && measurement.relatedMarks.length > 0) {
+            html += ' · 关联: ' + measurement.relatedMarks.join(', ');
+          }
+          html += '</div>';
+        }
+        html += "</div>";
+      });
+      html += "</div>";
+    }
+
+    if (measurementComparison.conflicts && measurementComparison.conflicts.length > 0) {
+      html += '<div class="toolbar-3">';
+      html += '<button type="button" class="secondary" data-bulk-measurement-csv="keep">全部保留本地</button>';
+      html += '<button type="button" class="secondary" data-bulk-measurement-csv="overwrite">全部覆盖本地</button>';
+      html += '<button type="button" class="secondary" data-bulk-measurement-csv="saveas">全部另存新编号</button>';
+      html += "</div>";
+      html += '<div class="preview-list">';
+      measurementComparison.conflicts.forEach((conflict, idx) => {
+        html += '<div class="preview-item preview-item-conflict" data-measurement-conflict-csv-index="' + idx + '"><div class="preview-item-main"><span><b>' + escapeHtml(conflict.imported.code) + "</b> " + escapeHtml(conflict.imported.dive || "") + ' · ' + (conflict.imported.length ? conflict.imported.length + "m" : "") + "</span>";
+        html += '<select data-measurement-csv-resolution-index="' + idx + '">';
+        html += '<option value="keep">保留本地</option>';
+        html += '<option value="overwrite">覆盖本地</option>';
+        html += '<option value="saveas">另存为新编号</option>';
+        html += "</select></div>";
+        if (conflict.imported.points && conflict.imported.points.length >= 2) {
+          html += '<div class="preview-item-detail muted small">';
+          html += '点: ' + conflict.imported.points.map(p => `(${p.x},${p.y})`).join(' → ');
+          if (conflict.imported.relatedMarks && conflict.imported.relatedMarks.length > 0) {
+            html += ' · 关联: ' + conflict.imported.relatedMarks.join(', ');
+          }
+          html += '</div>';
+        }
+        html += "</div>";
+      });
+      html += "</div>";
+    }
+
+    if (measurementComparison.errors && measurementComparison.errors.length > 0) {
+      html += '<div class="preview-list">';
+      measurementComparison.errors.forEach((err) => {
+        const lineInfo = err.lineNumber ? " (第 " + err.lineNumber + " 行)" : "";
+        const code = err.measurement && err.measurement.code ? err.measurement.code : "第 " + (err.index + 1) + " 项";
+        html += '<div class="preview-item"><span><b>' + escapeHtml(code) + "</b>" + lineInfo + "</span><span class='muted'>" + escapeHtml(err.errors.join("; ")) + "</span></div>";
+      });
+      html += "</div>";
+    }
+    html += "</div>";
+
+    return html;
+  }
+
+  function showCSVImportPreview(csvParseResult, comparison, onConfirm, onCancel) {
+    const { headers, mapping, marks = [], dives = [], measurements = [] } = csvParseResult;
+    const { marks: markComparison, dives: diveComparison, measurements: measurementComparison } = comparison;
+
+    const markResolutions = (markComparison?.conflicts || []).map(() => "keep");
+    const diveResolutions = (diveComparison?.conflicts || []).map(() => "keep");
+    const measurementResolutions = (measurementComparison?.conflicts || []).map(() => "keep");
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    const totalRecords = marks.length + dives.length + measurements.length;
+
+    let html = "<h2>CSV 导入预览</h2>";
+
+    html += '<div class="summary-bar">';
+    html += '<span class="pill">CSV 格式</span>';
+    html += '<span class="pill">共 ' + totalRecords + " 条记录</span>";
+    if (marks.length > 0) html += '<span class="pill pill-mark">标记 ' + marks.length + " 项</span>";
+    if (dives.length > 0) html += '<span class="pill pill-dive">潜次 ' + dives.length + " 项</span>";
+    if (measurements.length > 0) html += '<span class="pill pill-measurement">测距 ' + measurements.length + " 项</span>";
+    html += "</div>";
+
+    html += '<div class="preview-section">';
+    html += '<h3>字段映射</h3>';
+    html += '<div class="csv-mapping-summary">';
+    CSV_FIELDS_ORDER.forEach((field) => {
+      const label = CSV_FIELD_LABELS[field];
+      const mappedHeader = mapping[field] || "未映射";
+      const isMarkRequired = ["code", "type", "dive", "depth"].includes(field);
+      const isDiveRequired = ["date", "leader", "visibility", "objective"].includes(field);
+      const isMeasurementRequired = ["length"].includes(field);
+      const isRequired = isMarkRequired || isDiveRequired || isMeasurementRequired;
+      html += '<div class="csv-mapping-summary-item">';
+      html += '<span class="csv-mapping-field-label">' + label + (isRequired ? "*" : "") + "</span>";
+      html += '<span class="csv-mapping-arrow">→</span>';
+      html += '<span class="csv-mapping-header ' + (mapping[field] ? "" : "csv-unmapped") + '">' + escapeHtml(mappedHeader) + "</span>";
+      html += "</div>";
+    });
+    html += "</div>";
+    html += "</div>";
+
+    if (markComparison && markComparison.summary.total > 0) {
+      html += renderCSVMarkSection(markComparison);
+    }
+
+    if (diveComparison && diveComparison.summary.total > 0) {
+      html += renderCSVDiveSection(diveComparison);
+    }
+
+    if (measurementComparison && measurementComparison.summary.total > 0) {
+      html += renderCSVMeasurementSection(measurementComparison);
+    }
 
     html += '<div class="toolbar">';
     html += '<button type="button" id="confirmCSVImportBtn">确认导入</button>';
@@ -4115,7 +4317,7 @@ const UI = (() => {
     modal.querySelectorAll("[data-bulk-mark-csv]").forEach((btn) => {
       btn.onclick = (e) => {
         const action = e.target.dataset.bulkMarkCsv;
-        (comparison.conflicts || []).forEach((_, idx) => {
+        (markComparison?.conflicts || []).forEach((_, idx) => {
           markResolutions[idx] = action;
           const select = modal.querySelector('[data-mark-csv-resolution-index="' + idx + '"]');
           if (select) select.value = action;
@@ -4123,9 +4325,45 @@ const UI = (() => {
       };
     });
 
+    modal.querySelectorAll("[data-dive-csv-resolution-index]").forEach((select) => {
+      select.onchange = (e) => {
+        const idx = parseInt(e.target.dataset.diveCsvResolutionIndex);
+        diveResolutions[idx] = e.target.value;
+      };
+    });
+
+    modal.querySelectorAll("[data-bulk-dive-csv]").forEach((btn) => {
+      btn.onclick = (e) => {
+        const action = e.target.dataset.bulkDiveCsv;
+        (diveComparison?.conflicts || []).forEach((_, idx) => {
+          diveResolutions[idx] = action;
+          const select = modal.querySelector('[data-dive-csv-resolution-index="' + idx + '"]');
+          if (select) select.value = action;
+        });
+      };
+    });
+
+    modal.querySelectorAll("[data-measurement-csv-resolution-index]").forEach((select) => {
+      select.onchange = (e) => {
+        const idx = parseInt(e.target.dataset.measurementCsvResolutionIndex);
+        measurementResolutions[idx] = e.target.value;
+      };
+    });
+
+    modal.querySelectorAll("[data-bulk-measurement-csv]").forEach((btn) => {
+      btn.onclick = (e) => {
+        const action = e.target.dataset.bulkMeasurementCsv;
+        (measurementComparison?.conflicts || []).forEach((_, idx) => {
+          measurementResolutions[idx] = action;
+          const select = modal.querySelector('[data-measurement-csv-resolution-index="' + idx + '"]');
+          if (select) select.value = action;
+        });
+      };
+    });
+
     modal.querySelector("#confirmCSVImportBtn").onclick = () => {
       document.body.removeChild(backdrop);
-      onConfirm({ markResolutions, diveResolutions: [], measurementResolutions: [] });
+      onConfirm({ markResolutions, diveResolutions, measurementResolutions });
     };
 
     modal.querySelector("#cancelCSVImportBtn").onclick = () => {
@@ -4817,9 +5055,7 @@ const UI = (() => {
 
     const originalProjectId = currentProject ? currentProject.id : null;
     const isCurrentProject = originalProjectId === projectId;
-    SnapshotModule.setProjectId(projectId);
-
-    const timeline = callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline();
+    const timeline = withSnapshotProjectContext(projectId, () => callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline());
 
     const backdrop = document.createElement("div");
     backdrop.className = "modal-backdrop";
@@ -4846,6 +5082,28 @@ const UI = (() => {
     document.body.removeChild(backdrop);
   }
 
+  function withSnapshotProjectContext(projectId, fn) {
+    const originalProjectId = currentProject ? currentProject.id : null;
+    if (typeof SnapshotModule !== "undefined") {
+      SnapshotModule.setProjectId(projectId);
+    }
+    if (typeof DataIO !== "undefined" && typeof DataIO.setProjectId === "function") {
+      DataIO.setProjectId(projectId);
+    }
+    try {
+      return fn();
+    } finally {
+      if (originalProjectId) {
+        if (typeof SnapshotModule !== "undefined") {
+          SnapshotModule.setProjectId(originalProjectId);
+        }
+        if (typeof DataIO !== "undefined" && typeof DataIO.setProjectId === "function") {
+          DataIO.setProjectId(originalProjectId);
+        }
+      }
+    }
+  }
+
   function renderSnapshotHistoryContent(modal, backdrop, projectId, projectName, isCurrentProject, timeline, originalProjectId, parentModal, parentBackdrop) {
     const entityNames = SnapshotModule.ENTITY_TYPE_NAMES || {};
     const actionNames = SnapshotModule.ACTION_NAMES || {};
@@ -4860,7 +5118,7 @@ const UI = (() => {
 
     html += '<div class="snapshot-stats">';
     if (callbacks.onGetSnapshotStorageStats) {
-      const stats = callbacks.onGetSnapshotStorageStats();
+      const stats = withSnapshotProjectContext(projectId, () => callbacks.onGetSnapshotStorageStats());
       if (stats) {
         html += '<span>总大小: ' + (stats.totalSizeKB || 0) + ' KB</span>';
         html += '<span>快照总数: ' + (stats.count || 0) + ' 个</span>';
@@ -4939,10 +5197,10 @@ const UI = (() => {
         const description = prompt("请输入快照描述（可选）:");
         if (description !== null) {
           if (callbacks.onCreateManualSnapshot) {
-            const snapshot = callbacks.onCreateManualSnapshot(description || "手动快照");
+            const snapshot = withSnapshotProjectContext(projectId, () => callbacks.onCreateManualSnapshot(description || "手动快照"));
             if (snapshot) {
               showToast("快照已创建", "success");
-              const newTimeline = callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline();
+              const newTimeline = withSnapshotProjectContext(projectId, () => callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline());
               renderSnapshotHistoryContent(modal, backdrop, projectId, projectName, isCurrentProject, newTimeline, originalProjectId, parentModal, parentBackdrop);
             }
           }
@@ -4954,8 +5212,8 @@ const UI = (() => {
     if (importBtn) {
       importBtn.onclick = () => {
         if (callbacks.onImportSnapshot) {
-          callbacks.onImportSnapshot();
-          const newTimeline = callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline();
+          withSnapshotProjectContext(projectId, () => callbacks.onImportSnapshot());
+          const newTimeline = withSnapshotProjectContext(projectId, () => callbacks.onGetTimeline ? callbacks.onGetTimeline() : SnapshotModule.getTimeline());
           renderSnapshotHistoryContent(modal, backdrop, projectId, projectName, isCurrentProject, newTimeline, originalProjectId, parentModal, parentBackdrop);
         }
       };
@@ -4979,7 +5237,7 @@ const UI = (() => {
       btn.onclick = () => {
         const snapshotId = btn.dataset.id;
         if (callbacks.onExportSnapshot) {
-          callbacks.onExportSnapshot(snapshotId);
+          withSnapshotProjectContext(projectId, () => callbacks.onExportSnapshot(snapshotId));
         }
       };
     });
@@ -4987,7 +5245,7 @@ const UI = (() => {
     modal.querySelectorAll(".snapshot-rollback-btn").forEach(btn => {
       btn.onclick = () => {
         const snapshotId = btn.dataset.id;
-        const snapshot = callbacks.onGetSnapshotDetail ? callbacks.onGetSnapshotDetail(snapshotId) : SnapshotModule.getSnapshotById(snapshotId);
+        const snapshot = withSnapshotProjectContext(projectId, () => callbacks.onGetSnapshotDetail ? callbacks.onGetSnapshotDetail(snapshotId) : SnapshotModule.getSnapshotById(snapshotId));
         if (!snapshot) {
           showToast("快照不存在", "error");
           return;
@@ -5001,7 +5259,7 @@ const UI = (() => {
 
         showRollbackNotice(dateStr, () => {
           if (callbacks.onCheckRollbackConflicts) {
-            const conflicts = callbacks.onCheckRollbackConflicts(snapshotId);
+            const conflicts = withSnapshotProjectContext(projectId, () => callbacks.onCheckRollbackConflicts(snapshotId));
             if (conflicts && !conflicts.valid) {
               showToast("回滚失败: " + conflicts.error, "error");
               return;
@@ -5016,7 +5274,7 @@ const UI = (() => {
 
           if (confirm("确定要回滚到此版本吗？回滚后当前数据将被替换，且会创建一个新快照记录此次回滚操作。")) {
             if (callbacks.onRollbackToSnapshot) {
-              const result = callbacks.onRollbackToSnapshot(snapshotId);
+              const result = withSnapshotProjectContext(projectId, () => callbacks.onRollbackToSnapshot(snapshotId));
               if (result && result.success) {
                 showToast("回滚成功", "success");
                 closeSnapshotHistory(backdrop, originalProjectId);
@@ -5035,7 +5293,7 @@ const UI = (() => {
   }
 
   function showSnapshotDetail(snapshotId, projectId, projectName) {
-    const snapshot = callbacks.onGetSnapshotDetail ? callbacks.onGetSnapshotDetail(snapshotId) : SnapshotModule.getSnapshotById(snapshotId);
+    const snapshot = withSnapshotProjectContext(projectId, () => callbacks.onGetSnapshotDetail ? callbacks.onGetSnapshotDetail(snapshotId) : SnapshotModule.getSnapshotById(snapshotId));
     if (!snapshot) {
       showToast("快照不存在", "error");
       return;
@@ -5118,7 +5376,7 @@ const UI = (() => {
   }
 
   function showSnapshotDiff(snapshotId, projectId, projectName) {
-    const diff = callbacks.onGetSnapshotDiff ? callbacks.onGetSnapshotDiff(snapshotId, null) : SnapshotModule.getSnapshotDiff(snapshotId, null);
+    const diff = withSnapshotProjectContext(projectId, () => callbacks.onGetSnapshotDiff ? callbacks.onGetSnapshotDiff(snapshotId, null) : SnapshotModule.getSnapshotDiff(snapshotId, null));
     if (!diff) {
       showToast("无法生成对比数据", "error");
       return;
@@ -5130,7 +5388,7 @@ const UI = (() => {
     const modal = document.createElement("div");
     modal.className = "modal";
 
-    const snapshot = SnapshotModule.getSnapshotById(snapshotId);
+    const snapshot = withSnapshotProjectContext(projectId, () => SnapshotModule.getSnapshotById(snapshotId));
     const dateStr = snapshot ? new Date(snapshot.timestamp).toLocaleString("zh-CN") : "未知";
 
     let html = '<h2>版本对比 - ' + escapeHtml(projectName) + '</h2>';
