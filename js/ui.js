@@ -122,6 +122,7 @@ const UI = (() => {
       baseMapImage: document.querySelector("#baseMapImage"),
       wreckEl: document.querySelector(".wreck"),
       reportBtn: document.querySelector("#reportBtn"),
+      multiAnalysisBtn: document.querySelector("#multiAnalysisBtn"),
       projectSelect: document.querySelector("#projectSelect"),
       manageProjectBtn: document.querySelector("#manageProjectBtn"),
       addParticipantBtn: document.querySelector("#addParticipantBtn"),
@@ -526,6 +527,12 @@ const UI = (() => {
     if (elements.reportBtn) {
       elements.reportBtn.onclick = () => {
         showReportModal();
+      };
+    }
+
+    if (elements.multiAnalysisBtn) {
+      elements.multiAnalysisBtn.onclick = () => {
+        showMultiAnalysisModal();
       };
     }
 
@@ -3777,7 +3784,6 @@ const UI = (() => {
   }
 
   const CSV_FIELD_LABELS = {
-    dataType: "数据类型",
     code: "编号",
     type: "类型",
     dive: "潜次",
@@ -3791,41 +3797,12 @@ const UI = (() => {
     sampleMethod: "采样方式",
     sampler: "采样人",
     sampleTime: "采样时间",
-    date: "日期",
-    leader: "负责人",
-    weather: "天气",
-    current: "水流",
-    visibility: "能见度",
-    objective: "任务目标",
-    participants: "参与人员",
-    length: "长度",
-    x1: "起点X坐标",
-    y1: "起点Y坐标",
-    x2: "终点X坐标",
-    y2: "终点Y坐标",
-    points: "坐标点序列",
-    relatedMarks: "关联标记",
-  };
-
-  const CSV_FIELDS_BY_TYPE = {
-    common: ["dataType", "code", "dive"],
-    mark: ["type", "depth", "x", "y", "orientation", "condition", "note", "sampleNo", "sampleMethod", "sampler", "sampleTime"],
-    dive: ["date", "leader", "weather", "current", "visibility", "objective", "participants"],
-    measurement: ["length", "x1", "y1", "x2", "y2", "points", "relatedMarks"],
   };
 
   const CSV_FIELDS_ORDER = [
-    "dataType",
     "code",
     "type",
     "dive",
-    "date",
-    "leader",
-    "weather",
-    "current",
-    "visibility",
-    "objective",
-    "participants",
     "depth",
     "x",
     "y",
@@ -3836,28 +3813,10 @@ const UI = (() => {
     "sampleMethod",
     "sampler",
     "sampleTime",
-    "length",
-    "x1",
-    "y1",
-    "x2",
-    "y2",
-    "points",
-    "relatedMarks",
   ];
 
-  function getFieldRequiredInfo(field, dataType) {
-    const markRequired = ["code", "type", "dive", "depth"];
-    const diveRequired = ["code", "date", "leader", "visibility", "objective"];
-    const measurementRequired = ["code", "dive", "length"];
-
-    if (dataType === "mark" && markRequired.includes(field)) return true;
-    if (dataType === "dive" && diveRequired.includes(field)) return true;
-    if (dataType === "measurement" && measurementRequired.includes(field)) return true;
-    return false;
-  }
-
   function showCSVFieldMappingPreview(csvParseResult, onConfirm, onCancel) {
-    const { headers, mapping, rows, marks = [], dives = [], measurements = [] } = csvParseResult;
+    const { headers, mapping, rows } = csvParseResult;
     const currentMapping = { ...mapping };
 
     const backdrop = document.createElement("div");
@@ -3866,58 +3825,32 @@ const UI = (() => {
     const modal = document.createElement("div");
     modal.className = "modal modal-csv";
 
-    const hasMarks = marks.length > 0;
-    const hasDives = dives.length > 0;
-    const hasMeasurements = measurements.length > 0;
-
     let html = "<h2>CSV 字段映射</h2>";
     html += '<div class="muted" style="margin-bottom:16px;">请确认 CSV 列与系统字段的对应关系，可通过下拉菜单调整。</div>';
 
-    html += '<div class="summary-bar">';
-    html += '<span class="pill">共 ' + rows.length + ' 行数据</span>';
-    if (hasMarks) html += '<span class="pill pill-mark">标记 ' + marks.length + ' 项</span>';
-    if (hasDives) html += '<span class="pill pill-dive">潜次 ' + dives.length + ' 项</span>';
-    if (hasMeasurements) html += '<span class="pill pill-measurement">测距 ' + measurements.length + ' 项</span>';
-    html += '</div>';
+    html += '<div class="csv-mapping-section">';
+    html += '<h3>字段映射</h3>';
+    html += '<div class="csv-mapping-grid">';
+    CSV_FIELDS_ORDER.forEach((field) => {
+      const label = CSV_FIELD_LABELS[field];
+      const isRequired = ["code", "type", "dive", "depth"].includes(field);
+      const currentHeader = currentMapping[field] || "";
 
-    const typeSections = [];
-    if (hasMarks) typeSections.push({ type: "common", title: "通用字段" });
-    if (hasMarks) typeSections.push({ type: "mark", title: "标记字段" });
-    if (hasDives) typeSections.push({ type: "dive", title: "潜次字段" });
-    if (hasMeasurements) typeSections.push({ type: "measurement", title: "测距字段" });
-
-    const seenFields = new Set();
-    typeSections.forEach((section) => {
-      const fields = CSV_FIELDS_BY_TYPE[section.type] || [];
-      const visibleFields = fields.filter(f => !seenFields.has(f));
-      visibleFields.forEach(f => seenFields.add(f));
-
-      if (visibleFields.length === 0) return;
-
-      html += '<div class="csv-mapping-section">';
-      html += '<h3 class="csv-section-title csv-section-' + section.type + '">' + section.title + '</h3>';
-      html += '<div class="csv-mapping-grid">';
-      visibleFields.forEach((field) => {
-        const label = CSV_FIELD_LABELS[field];
-        const isRequired = getFieldRequiredInfo(field, section.type);
-        const currentHeader = currentMapping[field] || "";
-
-        html += '<div class="csv-mapping-row" data-field-type="' + section.type + '">';
-        html += '<div class="csv-mapping-label">';
-        html += '<span>' + label + '</span>';
-        if (isRequired) html += '<span class="csv-required">*</span>';
-        html += '</div>';
-        html += '<select data-mapping-field="' + field + '">';
-        html += '<option value="">-- 不映射 --</option>';
-        headers.forEach((h) => {
-          html += '<option value="' + escapeHtml(h) + '"' + (currentHeader === h ? " selected" : "") + ">" + escapeHtml(h) + "</option>";
-        });
-        html += "</select>";
-        html += "</div>";
+      html += '<div class="csv-mapping-row">';
+      html += '<div class="csv-mapping-label">';
+      html += '<span>' + label + '</span>';
+      if (isRequired) html += '<span class="csv-required">*</span>';
+      html += '</div>';
+      html += '<select data-mapping-field="' + field + '">';
+      html += '<option value="">-- 不映射 --</option>';
+      headers.forEach((h) => {
+        html += '<option value="' + escapeHtml(h) + '"' + (currentHeader === h ? " selected" : "") + ">" + escapeHtml(h) + "</option>";
       });
-      html += "</div>";
+      html += "</select>";
       html += "</div>";
     });
+    html += "</div>";
+    html += "</div>";
 
     html += '<div class="csv-preview-section">';
     html += '<h3>数据预览（前 ' + Math.min(rows.length, 5) + ' 行）</h3>';
@@ -3977,12 +3910,43 @@ const UI = (() => {
     };
   }
 
-  function renderCSVMarkSection(markComparison, markResolutions, modal) {
-    let html = "";
-    if (!markComparison) return html;
+  function showCSVImportPreview(csvParseResult, comparison, onConfirm, onCancel) {
+    const { headers, mapping } = csvParseResult;
+    const markResolutions = (comparison.conflicts || []).map(() => "keep");
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    let html = "<h2>CSV 导入预览</h2>";
+
+    html += '<div class="summary-bar">';
+    html += '<span class="pill">CSV 格式</span>';
+    html += '<span class="pill">共 ' + comparison.summary.total + " 条记录</span>";
+    html += "</div>";
 
     html += '<div class="preview-section">';
-    html += '<h3 class="csv-section-title csv-section-mark">标记数据</h3>';
+    html += '<h3>字段映射</h3>';
+    html += '<div class="csv-mapping-summary">';
+    CSV_FIELDS_ORDER.forEach((field) => {
+      const label = CSV_FIELD_LABELS[field];
+      const mappedHeader = mapping[field] || "未映射";
+      const isRequired = ["code", "type", "dive", "depth"].includes(field);
+      html += '<div class="csv-mapping-summary-item">';
+      html += '<span class="csv-mapping-field-label">' + label + (isRequired ? "*" : "") + "</span>";
+      html += '<span class="csv-mapping-arrow">→</span>';
+      html += '<span class="csv-mapping-header ' + (mapping[field] ? "" : "csv-unmapped") + '">' + escapeHtml(mappedHeader) + "</span>";
+      html += "</div>";
+    });
+    html += "</div>";
+    html += "</div>";
+
+    const markComparison = comparison;
+
+    html += '<div class="preview-section">';
+    html += '<h3>标记数据</h3>';
     html += '<div class="summary-bar">';
     html += '<span class="pill">共 ' + markComparison.summary.total + " 项</span>";
     html += '<span class="pill pill-new">新增 ' + markComparison.summary.new + " 项</span>";
@@ -3990,7 +3954,7 @@ const UI = (() => {
     html += '<span class="pill pill-error">错误 ' + markComparison.summary.error + " 项</span>";
     html += "</div>";
 
-    if (markComparison.newMarks && markComparison.newMarks.length > 0) {
+    if (markComparison.newMarks.length > 0) {
       html += '<div class="preview-list">';
       markComparison.newMarks.forEach((mark) => {
         const sampleNo = mark.sampling?.sampleNo;
@@ -4020,7 +3984,7 @@ const UI = (() => {
       html += "</div>";
     }
 
-    if (markComparison.conflicts && markComparison.conflicts.length > 0) {
+    if (markComparison.conflicts.length > 0) {
       html += '<div class="toolbar-3">';
       html += '<button type="button" class="secondary" data-bulk-mark-csv="keep">全部保留本地</button>';
       html += '<button type="button" class="secondary" data-bulk-mark-csv="overwrite">全部覆盖本地</button>';
@@ -4114,7 +4078,7 @@ const UI = (() => {
       html += "</div>";
     }
 
-    if (markComparison.errors && markComparison.errors.length > 0) {
+    if (markComparison.errors.length > 0) {
       html += '<div class="preview-list">';
       markComparison.errors.forEach((err) => {
         const lineInfo = err.lineNumber ? " (第 " + err.lineNumber + " 行)" : "";
@@ -4131,244 +4095,6 @@ const UI = (() => {
       html += "</div>";
     }
     html += "</div>";
-
-    return html;
-  }
-
-  function renderCSVDiveSection(diveComparison, diveResolutions, modal) {
-    let html = "";
-    if (!diveComparison) return html;
-
-    html += '<div class="preview-section">';
-    html += '<h3 class="csv-section-title csv-section-dive">潜次数据</h3>';
-    html += '<div class="summary-bar">';
-    html += '<span class="pill">共 ' + diveComparison.summary.total + " 项</span>";
-    html += '<span class="pill pill-new">新增 ' + diveComparison.summary.new + " 项</span>";
-    html += '<span class="pill pill-conflict">冲突 ' + diveComparison.summary.conflict + " 项</span>";
-    html += '<span class="pill pill-error">错误 ' + diveComparison.summary.error + " 项</span>";
-    html += "</div>";
-
-    if (diveComparison.newDives && diveComparison.newDives.length > 0) {
-      html += '<div class="preview-list">';
-      diveComparison.newDives.forEach((dive) => {
-        html +=
-          '<div class="preview-item"><div><span><b>' +
-          escapeHtml(dive.code) +
-          "</b> " +
-          escapeHtml(dive.date || "") +
-          ' · ' +
-          escapeHtml(dive.leader || "") +
-          "</span><span class='pill pill-new'>新增</span></div>";
-        if (dive.objective) {
-          html += '<div class="preview-item-detail muted small">' + escapeHtml(dive.objective) + '</div>';
-        }
-        html += "</div>";
-      });
-      html += "</div>";
-    }
-
-    if (diveComparison.conflicts && diveComparison.conflicts.length > 0) {
-      html += '<div class="toolbar-3">';
-      html += '<button type="button" class="secondary" data-bulk-dive-csv="keep">全部保留本地</button>';
-      html += '<button type="button" class="secondary" data-bulk-dive-csv="overwrite">全部覆盖本地</button>';
-      html += '<button type="button" class="secondary" data-bulk-dive-csv="saveas">全部另存新编号</button>';
-      html += "</div>";
-      html += '<div class="preview-list">';
-      diveComparison.conflicts.forEach((conflict, idx) => {
-        html +=
-          '<div class="preview-item preview-item-conflict" data-dive-conflict-csv-index="' +
-          idx +
-          '"><div class="preview-item-main"><span><b>' +
-          escapeHtml(conflict.imported.code) +
-          "</b> " +
-          escapeHtml(conflict.imported.date || "") +
-          ' · ' +
-          escapeHtml(conflict.imported.leader || "") +
-          "</span>";
-        html += '<select data-dive-csv-resolution-index="' + idx + '">';
-        html += '<option value="keep">保留本地</option>';
-        html += '<option value="overwrite">覆盖本地</option>';
-        html += '<option value="saveas">另存为新编号</option>';
-        html += "</select></div>";
-        if (conflict.imported.objective) {
-          html += '<div class="preview-item-detail muted small">' + escapeHtml(conflict.imported.objective) + '</div>';
-        }
-        html += "</div>";
-      });
-      html += "</div>";
-    }
-
-    if (diveComparison.errors && diveComparison.errors.length > 0) {
-      html += '<div class="preview-list">';
-      diveComparison.errors.forEach((err) => {
-        const lineInfo = err.lineNumber ? " (第 " + err.lineNumber + " 行)" : "";
-        const code = err.dive && err.dive.code ? err.dive.code : "第 " + (err.index + 1) + " 项";
-        html +=
-          '<div class="preview-item"><span><b>' +
-          escapeHtml(code) +
-          "</b>" +
-          lineInfo +
-          "</span><span class='muted'>" +
-          escapeHtml(err.errors.join("; ")) +
-          "</span></div>";
-      });
-      html += "</div>";
-    }
-    html += "</div>";
-
-    return html;
-  }
-
-  function renderCSVMeasurementSection(measurementComparison, measurementResolutions, modal) {
-    let html = "";
-    if (!measurementComparison) return html;
-
-    html += '<div class="preview-section">';
-    html += '<h3 class="csv-section-title csv-section-measurement">测距数据</h3>';
-    html += '<div class="summary-bar">';
-    html += '<span class="pill">共 ' + measurementComparison.summary.total + " 项</span>";
-    html += '<span class="pill pill-new">新增 ' + measurementComparison.summary.new + " 项</span>";
-    html += '<span class="pill pill-conflict">冲突 ' + measurementComparison.summary.conflict + " 项</span>";
-    html += '<span class="pill pill-error">错误 ' + measurementComparison.summary.error + " 项</span>";
-    html += "</div>";
-
-    if (measurementComparison.newMeasurements && measurementComparison.newMeasurements.length > 0) {
-      html += '<div class="preview-list">';
-      measurementComparison.newMeasurements.forEach((measurement) => {
-        html +=
-          '<div class="preview-item"><div><span><b>' +
-          escapeHtml(measurement.code) +
-          "</b> " +
-          escapeHtml(measurement.dive || "") +
-          ' · ' +
-          (measurement.length ? measurement.length + "m" : "") +
-          "</span><span class='pill pill-new'>新增</span></div>";
-        if (measurement.points && measurement.points.length >= 2) {
-          html += '<div class="preview-item-detail muted small">';
-          html += '点: ' + measurement.points.map(p => `(${p.x},${p.y})`).join(' → ');
-          if (measurement.relatedMarks && measurement.relatedMarks.length > 0) {
-            html += ' · 关联: ' + measurement.relatedMarks.join(', ');
-          }
-          html += '</div>';
-        }
-        html += "</div>";
-      });
-      html += "</div>";
-    }
-
-    if (measurementComparison.conflicts && measurementComparison.conflicts.length > 0) {
-      html += '<div class="toolbar-3">';
-      html += '<button type="button" class="secondary" data-bulk-measurement-csv="keep">全部保留本地</button>';
-      html += '<button type="button" class="secondary" data-bulk-measurement-csv="overwrite">全部覆盖本地</button>';
-      html += '<button type="button" class="secondary" data-bulk-measurement-csv="saveas">全部另存新编号</button>';
-      html += "</div>";
-      html += '<div class="preview-list">';
-      measurementComparison.conflicts.forEach((conflict, idx) => {
-        html +=
-          '<div class="preview-item preview-item-conflict" data-measurement-conflict-csv-index="' +
-          idx +
-          '"><div class="preview-item-main"><span><b>' +
-          escapeHtml(conflict.imported.code) +
-          "</b> " +
-          escapeHtml(conflict.imported.dive || "") +
-          ' · ' +
-          (conflict.imported.length ? conflict.imported.length + "m" : "") +
-          "</span>";
-        html += '<select data-measurement-csv-resolution-index="' + idx + '">';
-        html += '<option value="keep">保留本地</option>';
-        html += '<option value="overwrite">覆盖本地</option>';
-        html += '<option value="saveas">另存为新编号</option>';
-        html += "</select></div>";
-        if (conflict.imported.points && conflict.imported.points.length >= 2) {
-          html += '<div class="preview-item-detail muted small">';
-          html += '点: ' + conflict.imported.points.map(p => `(${p.x},${p.y})`).join(' → ');
-          if (conflict.imported.relatedMarks && conflict.imported.relatedMarks.length > 0) {
-            html += ' · 关联: ' + conflict.imported.relatedMarks.join(', ');
-          }
-          html += '</div>';
-        }
-        html += "</div>";
-      });
-      html += "</div>";
-    }
-
-    if (measurementComparison.errors && measurementComparison.errors.length > 0) {
-      html += '<div class="preview-list">';
-      measurementComparison.errors.forEach((err) => {
-        const lineInfo = err.lineNumber ? " (第 " + err.lineNumber + " 行)" : "";
-        const code = err.measurement && err.measurement.code ? err.measurement.code : "第 " + (err.index + 1) + " 项";
-        html +=
-          '<div class="preview-item"><span><b>' +
-          escapeHtml(code) +
-          "</b>" +
-          lineInfo +
-          "</span><span class='muted'>" +
-          escapeHtml(err.errors.join("; ")) +
-          "</span></div>";
-      });
-      html += "</div>";
-    }
-    html += "</div>";
-
-    return html;
-  }
-
-  function showCSVImportPreview(csvParseResult, comparison, onConfirm, onCancel) {
-    const { headers, mapping, marks = [], dives = [], measurements = [] } = csvParseResult;
-    const { marks: markComparison, dives: diveComparison, measurements: measurementComparison } = comparison;
-
-    const markResolutions = (markComparison?.conflicts || []).map(() => "keep");
-    const diveResolutions = (diveComparison?.conflicts || []).map(() => "keep");
-    const measurementResolutions = (measurementComparison?.conflicts || []).map(() => "keep");
-
-    const backdrop = document.createElement("div");
-    backdrop.className = "modal-backdrop";
-
-    const modal = document.createElement("div");
-    modal.className = "modal";
-
-    const totalRecords = marks.length + dives.length + measurements.length;
-
-    let html = "<h2>CSV 导入预览</h2>";
-
-    html += '<div class="summary-bar">';
-    html += '<span class="pill">CSV 格式</span>';
-    html += '<span class="pill">共 ' + totalRecords + " 条记录</span>";
-    if (marks.length > 0) html += '<span class="pill pill-mark">标记 ' + marks.length + " 项</span>";
-    if (dives.length > 0) html += '<span class="pill pill-dive">潜次 ' + dives.length + " 项</span>";
-    if (measurements.length > 0) html += '<span class="pill pill-measurement">测距 ' + measurements.length + " 项</span>";
-    html += "</div>";
-
-    html += '<div class="preview-section">';
-    html += '<h3>字段映射</h3>';
-    html += '<div class="csv-mapping-summary">';
-    CSV_FIELDS_ORDER.forEach((field) => {
-      const label = CSV_FIELD_LABELS[field];
-      const mappedHeader = mapping[field] || "未映射";
-      const isMarkRequired = ["code", "type", "dive", "depth"].includes(field);
-      const isDiveRequired = ["date", "leader", "visibility", "objective"].includes(field);
-      const isMeasurementRequired = ["length"].includes(field);
-      const isRequired = isMarkRequired || isDiveRequired || isMeasurementRequired;
-      html += '<div class="csv-mapping-summary-item">';
-      html += '<span class="csv-mapping-field-label">' + label + (isRequired ? "*" : "") + "</span>";
-      html += '<span class="csv-mapping-arrow">→</span>';
-      html += '<span class="csv-mapping-header ' + (mapping[field] ? "" : "csv-unmapped") + '">' + escapeHtml(mappedHeader) + "</span>";
-      html += "</div>";
-    });
-    html += "</div>";
-    html += "</div>";
-
-    if (markComparison && markComparison.summary.total > 0) {
-      html += renderCSVMarkSection(markComparison, markResolutions, modal);
-    }
-
-    if (diveComparison && diveComparison.summary.total > 0) {
-      html += renderCSVDiveSection(diveComparison, diveResolutions, modal);
-    }
-
-    if (measurementComparison && measurementComparison.summary.total > 0) {
-      html += renderCSVMeasurementSection(measurementComparison, measurementResolutions, modal);
-    }
 
     html += '<div class="toolbar">';
     html += '<button type="button" id="confirmCSVImportBtn">确认导入</button>';
@@ -4389,7 +4115,7 @@ const UI = (() => {
     modal.querySelectorAll("[data-bulk-mark-csv]").forEach((btn) => {
       btn.onclick = (e) => {
         const action = e.target.dataset.bulkMarkCsv;
-        (markComparison?.conflicts || []).forEach((_, idx) => {
+        (comparison.conflicts || []).forEach((_, idx) => {
           markResolutions[idx] = action;
           const select = modal.querySelector('[data-mark-csv-resolution-index="' + idx + '"]');
           if (select) select.value = action;
@@ -4397,45 +4123,9 @@ const UI = (() => {
       };
     });
 
-    modal.querySelectorAll("[data-dive-csv-resolution-index]").forEach((select) => {
-      select.onchange = (e) => {
-        const idx = parseInt(e.target.dataset.diveCsvResolutionIndex);
-        diveResolutions[idx] = e.target.value;
-      };
-    });
-
-    modal.querySelectorAll("[data-bulk-dive-csv]").forEach((btn) => {
-      btn.onclick = (e) => {
-        const action = e.target.dataset.bulkDiveCsv;
-        (diveComparison?.conflicts || []).forEach((_, idx) => {
-          diveResolutions[idx] = action;
-          const select = modal.querySelector('[data-dive-csv-resolution-index="' + idx + '"]');
-          if (select) select.value = action;
-        });
-      };
-    });
-
-    modal.querySelectorAll("[data-measurement-csv-resolution-index]").forEach((select) => {
-      select.onchange = (e) => {
-        const idx = parseInt(e.target.dataset.measurementCsvResolutionIndex);
-        measurementResolutions[idx] = e.target.value;
-      };
-    });
-
-    modal.querySelectorAll("[data-bulk-measurement-csv]").forEach((btn) => {
-      btn.onclick = (e) => {
-        const action = e.target.dataset.bulkMeasurementCsv;
-        (measurementComparison?.conflicts || []).forEach((_, idx) => {
-          measurementResolutions[idx] = action;
-          const select = modal.querySelector('[data-measurement-csv-resolution-index="' + idx + '"]');
-          if (select) select.value = action;
-        });
-      };
-    });
-
     modal.querySelector("#confirmCSVImportBtn").onclick = () => {
       document.body.removeChild(backdrop);
-      onConfirm({ markResolutions, diveResolutions, measurementResolutions });
+      onConfirm({ markResolutions, diveResolutions: [], measurementResolutions: [] });
     };
 
     modal.querySelector("#cancelCSVImportBtn").onclick = () => {
@@ -4978,12 +4668,6 @@ const UI = (() => {
 
     let html = '<h2>多遗址项目管理</h2>';
 
-    html += '<div class="project-manager-tabs">';
-    html += '<button class="project-tab active" data-tab="projects">项目列表</button>';
-    html += '<button class="project-tab" data-tab="history">版本历史</button>';
-    html += '</div>';
-
-    html += '<div class="project-tab-content" data-tab-content="projects">';
     html += '<div class="project-create-row">';
     html += '<input type="text" id="newProjectNameInput" placeholder="输入新遗址项目名称">';
     html += '<button id="createProjectBtn">创建项目</button>';
@@ -5036,38 +4720,6 @@ const UI = (() => {
     html += '</div>';
 
     html += '<div class="project-list-footer muted">项目数据存储在浏览器本地，清除浏览器数据将导致数据丢失，请定期导出备份。</div>';
-    html += '</div>';
-
-    html += '<div class="project-tab-content hidden" data-tab-content="history">';
-    html += '<div class="snapshot-toolbar">';
-    html += '<button id="createManualSnapshotBtn" class="primary">📸 创建快照</button>';
-    html += '<button id="importSnapshotBtn" class="secondary">导入快照</button>';
-    html += '<div class="snapshot-stats" id="snapshotStats"></div>';
-    html += '</div>';
-    html += '<div class="snapshot-filters">';
-    html += '<input type="text" id="snapshotSearch" placeholder="搜索历史记录...">';
-    html += '<select id="snapshotEntityFilter">';
-    html += '<option value="">全部类型</option>';
-    html += '<option value="mark">标记</option>';
-    html += '<option value="dive">潜次</option>';
-    html += '<option value="measurement">测距</option>';
-    html += '<option value="scale">比例尺</option>';
-    html += '<option value="grid">网格</option>';
-    html += '<option value="projectConfig">项目配置</option>';
-    html += '</select>';
-    html += '<select id="snapshotActionFilter">';
-    html += '<option value="">全部操作</option>';
-    html += '<option value="add">新增</option>';
-    html += '<option value="modify">编辑</option>';
-    html += '<option value="delete">删除</option>';
-    html += '<option value="merge">合并</option>';
-    html += '<option value="import">导入</option>';
-    html += '<option value="rollback">回滚</option>';
-    html += '</select>';
-    html += '</div>';
-    html += '<div id="timelineContainer" class="timeline-container"></div>';
-    html += '<div id="snapshotDetailModal" class="snapshot-detail-modal hidden"></div>';
-    html += '</div>';
 
     modal.innerHTML = html;
 
@@ -5146,342 +4798,763 @@ const UI = (() => {
         }
       };
     });
-
-    modal.querySelectorAll(".project-tab").forEach(tab => {
-      tab.onclick = () => {
-        const tabId = tab.dataset.tab;
-        modal.querySelectorAll(".project-tab").forEach(t => t.classList.remove("active"));
-        tab.classList.add("active");
-        modal.querySelectorAll(".project-tab-content").forEach(content => {
-          if (content.dataset.tabContent === tabId) {
-            content.classList.remove("hidden");
-          } else {
-            content.classList.add("hidden");
-          }
-        });
-        if (tabId === "history") {
-          renderTimeline(modal);
-        }
-      };
-    });
-
-    const createManualSnapshotBtn = modal.querySelector("#createManualSnapshotBtn");
-    if (createManualSnapshotBtn) {
-      createManualSnapshotBtn.onclick = () => {
-        const desc = prompt("请输入快照描述（可选）：", "");
-        if (callbacks.onCreateManualSnapshot) {
-          callbacks.onCreateManualSnapshot(desc || null);
-          renderTimeline(modal);
-        }
-      };
-    }
-
-    const importSnapshotBtn = modal.querySelector("#importSnapshotBtn");
-    if (importSnapshotBtn) {
-      importSnapshotBtn.onclick = () => {
-        if (callbacks.onImportSnapshot) {
-          callbacks.onImportSnapshot().then(() => {
-            renderTimeline(modal);
-          });
-        }
-      };
-    }
-
-    const snapshotSearch = modal.querySelector("#snapshotSearch");
-    if (snapshotSearch) {
-      snapshotSearch.oninput = () => renderTimeline(modal);
-    }
-
-    const snapshotEntityFilter = modal.querySelector("#snapshotEntityFilter");
-    if (snapshotEntityFilter) {
-      snapshotEntityFilter.onchange = () => renderTimeline(modal);
-    }
-
-    const snapshotActionFilter = modal.querySelector("#snapshotActionFilter");
-    if (snapshotActionFilter) {
-      snapshotActionFilter.onchange = () => renderTimeline(modal);
-    }
   }
 
-  function renderTimeline(modal) {
-    const container = modal.querySelector("#timelineContainer");
-    const statsEl = modal.querySelector("#snapshotStats");
-    if (!container) return;
-
-    const search = modal.querySelector("#snapshotSearch")?.value || "";
-    const entityType = modal.querySelector("#snapshotEntityFilter")?.value || null;
-    const action = modal.querySelector("#snapshotActionFilter")?.value || null;
-
-    if (callbacks.onGetSnapshotStorageStats) {
-      const stats = callbacks.onGetSnapshotStorageStats();
-      if (stats && statsEl) {
-        statsEl.innerHTML = `<span class="muted">共 ${stats.count} 个快照，占用 ${stats.totalSizeMB} MB</span>`;
-      }
-    }
-
-    if (!callbacks.onGetTimeline) {
-      container.innerHTML = '<div class="muted">快照模块未加载</div>';
+  function showMultiAnalysisModal() {
+    const allProjects = ProjectManager.getAllProjects();
+    if (allProjects.length < 2) {
+      showToast("至少需要2个项目才能进行综合分析", "error");
       return;
     }
 
-    const timeline = callbacks.onGetTimeline({
-      limit: 100,
-      entityType,
-      action,
-      search,
-    });
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
 
-    if (!timeline || timeline.items.length === 0) {
-      container.innerHTML = '<div class="muted timeline-empty">暂无历史记录，开始操作后将自动记录</div>';
-      return;
-    }
+    const modal = document.createElement("div");
+    modal.className = "modal modal-multi-analysis";
 
-    let html = '<div class="timeline">';
-    let currentDate = null;
-
-    timeline.items.forEach((item) => {
-      const itemDate = new Date(item.timestamp).toLocaleDateString();
-      if (itemDate !== currentDate) {
-        currentDate = itemDate;
-        html += '<div class="timeline-date">' + currentDate + '</div>';
-      }
-
-      const time = new Date(item.timestamp).toLocaleTimeString();
-      const iconClass = getTimelineIconClass(item.action, item.entityType);
-      const tagHtml = item.tags && item.tags.length > 0
-        ? item.tags.map(t => `<span class="timeline-tag tag-${t}">${escapeHtml(t)}</span>`).join("")
-        : "";
-
-      let itemClass = "timeline-item";
-      if (item.isCurrent) itemClass += " timeline-current";
-      if (item.tags && item.tags.includes("merge")) itemClass += " merge-snapshot";
-      if (item.tags && item.tags.includes("import")) itemClass += " import-snapshot";
-      if (item.tags && item.tags.includes("rollback")) itemClass += " rollback-snapshot";
-      if (item.tags && item.tags.includes("manual")) itemClass += " manual-snapshot";
-
-      html += '<div class="' + itemClass + '" data-id="' + item.id + '">';
-      html += '<div class="timeline-marker ' + iconClass + '"></div>';
-      html += '<div class="timeline-content">';
-      html += '<div class="timeline-header">';
-      html += '<span class="timeline-time">' + time + '</span>';
-      if (item.isCurrent) {
-        html += '<span class="pill pill-new">当前版本</span>';
-      }
-      html += tagHtml;
-      html += '</div>';
-      html += '<div class="timeline-description">' + escapeHtml(item.description) + '</div>';
-      if (item.entityCode) {
-        html += '<div class="timeline-entity muted">实体：' + escapeHtml(item.entityCode) + '</div>';
-      }
-      html += '<div class="timeline-actions">';
-      html += '<button class="secondary small timeline-view-btn" data-id="' + item.id + '">查看详情</button>';
-      if (!item.isCurrent) {
-        html += '<button class="timeline-rollback-btn" data-id="' + item.id + '">回滚到此版本</button>';
-      }
-      html += '<button class="secondary small timeline-export-btn" data-id="' + item.id + '">导出</button>';
-      html += '</div>';
-      html += '</div>';
-      html += '</div>';
-    });
-
+    let html = '<div class="ma-header">';
+    html += '<h2>多项目综合分析</h2>';
+    html += '<div class="ma-readonly-badge"><span class="ma-readonly-dot"></span>只读模式 · 不修改任何项目数据</div>';
     html += '</div>';
-    container.innerHTML = html;
+    html += '<div class="muted" style="margin-bottom:16px;">选择多个遗址项目（支持活动和归档项目），生成汇总看板和综合现场报告。</div>';
 
-    container.querySelectorAll(".timeline-view-btn").forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        showSnapshotDetail(modal, btn.dataset.id);
-      };
-    });
-
-    container.querySelectorAll(".timeline-rollback-btn").forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        showRollbackConfirm(modal, btn.dataset.id);
-      };
-    });
-
-    container.querySelectorAll(".timeline-export-btn").forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        if (callbacks.onExportSnapshot) {
-          callbacks.onExportSnapshot(btn.dataset.id);
-        }
-      };
-    });
-  }
-
-  function getTimelineIconClass(action, entityType) {
-    if (action === "add") return "add";
-    if (action === "delete") return "delete";
-    if (action === "modify") return "modify";
-    if (action === "merge") return "merge";
-    if (action === "import") return "import";
-    if (action === "rollback") return "rollback";
-    if (action === "migrate") return "migrate";
-    if (action === "initial") return "initial";
-    if (entityType === "scale" || entityType === "grid" || entityType === "projectConfig") return "modify";
-    return "modify";
-  }
-
-  function showSnapshotDetail(modal, snapshotId) {
-    const detailModal = modal.querySelector("#snapshotDetailModal");
-    if (!detailModal || !callbacks.onGetSnapshotDetail) return;
-
-    const detail = callbacks.onGetSnapshotDetail(snapshotId);
-    if (!detail) {
-      showToast("快照不存在", "error");
-      return;
-    }
-
-    let html = '<div class="snapshot-detail-content">';
-    html += '<div class="snapshot-detail-header">';
-    html += '<h3>快照详情</h3>';
-    html += '<button class="secondary small snapshot-detail-close">关闭</button>';
-    html += '</div>';
-
-    html += '<div class="snapshot-detail-body">';
-    html += '<div class="detail-row"><label>时间</label><span>' + new Date(detail.timestamp).toLocaleString() + '</span></div>';
-    html += '<div class="detail-row"><label>描述</label><span>' + escapeHtml(detail.description) + '</span></div>';
-    if (detail.entityType) {
-      html += '<div class="detail-row"><label>实体类型</label><span>' + (SnapshotModule?.ENTITY_TYPE_NAMES?.[detail.entityType] || detail.entityType) + '</span></div>';
-    }
-    if (detail.action) {
-      html += '<div class="detail-row"><label>操作类型</label><span>' + (SnapshotModule?.ACTION_NAMES?.[detail.action] || detail.action) + '</span></div>';
-    }
-    if (detail.entityCode) {
-      html += '<div class="detail-row"><label>实体编号</label><span>' + escapeHtml(detail.entityCode) + '</span></div>';
-    }
-    if (detail.tags && detail.tags.length > 0) {
-      html += '<div class="detail-row"><label>标签</label><span>' + detail.tags.map(t => `<span class="timeline-tag tag-${t}">${escapeHtml(t)}</span>`).join(" ") + '</span></div>';
-    }
-
-    if (detail.stats) {
-      html += '<div class="detail-section">';
-      html += '<h4>数据统计</h4>';
-      html += '<div class="detail-stats">';
-      html += '<div class="stat-item"><span class="stat-label">标记</span><span class="stat-value">' + detail.stats.markCount + '</span></div>';
-      html += '<div class="stat-item"><span class="stat-label">潜次</span><span class="stat-value">' + detail.stats.diveCount + '</span></div>';
-      html += '<div class="stat-item"><span class="stat-label">测距</span><span class="stat-value">' + detail.stats.measurementCount + '</span></div>';
-      if (detail.stats.hasScale) html += '<div class="stat-item"><span class="stat-label">比例尺</span><span class="stat-value">✓</span></div>';
-      if (detail.stats.hasGridConfig) html += '<div class="stat-item"><span class="stat-label">网格</span><span class="stat-value">✓</span></div>';
-      if (detail.stats.hasBaseMap) html += '<div class="stat-item"><span class="stat-label">底图</span><span class="stat-value">✓</span></div>';
-      html += '</div>';
-      html += '</div>';
-    }
-
-    if (detail.fieldDiff && detail.fieldDiff.length > 0) {
-      html += '<div class="detail-section">';
-      html += '<h4>字段变更</h4>';
-      html += '<div class="field-diff-list">';
-      detail.fieldDiff.forEach(diff => {
-        html += '<div class="field-diff-item">';
-        html += '<div class="field-diff-field">' + escapeHtml(diff.field) + '</div>';
-        html += '<div class="field-diff-values">';
-        html += '<div class="field-diff-before"><span class="diff-label">变更前：</span>' + escapeHtml(String(diff.before)) + '</div>';
-        html += '<div class="field-diff-after"><span class="diff-label">变更后：</span>' + escapeHtml(String(diff.after)) + '</div>';
-        html += '</div>';
-        html += '</div>';
-      });
-      html += '</div>';
-      html += '</div>';
-    }
-
-    if (detail.metadata && detail.metadata.conflicts && detail.metadata.conflicts.length > 0) {
-      html += '<div class="detail-section">';
-      html += '<h4>回滚冲突记录</h4>';
-      html += '<div class="conflict-list">';
-      detail.metadata.conflicts.forEach(conflict => {
-        html += '<div class="conflict-item conflict-' + conflict.type + '">';
-        html += '<span class="conflict-icon">' + (conflict.type === "warning" ? "⚠️" : "🔄") + '</span>';
-        html += '<span>' + escapeHtml(conflict.description) + '</span>';
-        html += '</div>';
-      });
-      html += '</div>';
-      html += '</div>';
-    }
-
+    html += '<div class="ma-project-selector">';
+    html += '<div class="ma-project-selector-header">';
+    html += '<label style="margin:0;font-weight:600;">选择项目</label>';
+    html += '<div class="ma-select-actions">';
+    html += '<button type="button" class="secondary small" id="maSelectActiveBtn">选全部活动</button>';
+    html += '<button type="button" class="secondary small" id="maSelectAllBtn">全选</button>';
+    html += '<button type="button" class="secondary small" id="maDeselectAllBtn">全不选</button>';
     html += '</div>';
     html += '</div>';
 
-    detailModal.innerHTML = html;
-    detailModal.classList.remove("hidden");
+    html += '<div class="ma-project-checkboxes">';
+    allProjects.forEach(p => {
+      const isArchived = p.archived;
+      html += '<label class="ma-project-checkbox">';
+      html += '<input type="checkbox" class="ma-project-check" value="' + p.id + '"' + (isArchived ? ' data-archived="true"' : '') + '>';
+      html += '<span class="ma-project-check-name">' + escapeHtml(p.name) + '</span>';
+      if (isArchived) html += '<span class="pill pill-error small">已归档</span>';
+      if (!isArchived) html += '<span class="pill pill-new small">活动</span>';
+      html += '</label>';
+    });
+    html += '</div>';
+    html += '</div>';
 
-    detailModal.querySelector(".snapshot-detail-close").onclick = () => {
-      detailModal.classList.add("hidden");
+    html += '<div id="maDashboard" class="ma-dashboard hidden"></div>';
+
+    html += '<div class="toolbar" style="margin-top:16px">';
+    html += '<button type="button" id="maGenerateBtn">生成看板</button>';
+    html += '<button type="button" id="maGenerateReportBtn" class="secondary" style="display:none;">生成综合报告</button>';
+    html += '<button type="button" id="maExportReportBtn" class="secondary" style="display:none;">导出报告HTML</button>';
+    html += '<button type="button" id="maPrintReportBtn" class="secondary" style="display:none;">打印报告</button>';
+    html += '<button type="button" class="secondary" id="maCancelBtn">关闭</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const checkboxes = modal.querySelectorAll(".ma-project-check");
+    const selectAllBtn = modal.querySelector("#maSelectAllBtn");
+    const selectActiveBtn = modal.querySelector("#maSelectActiveBtn");
+    const deselectAllBtn = modal.querySelector("#maDeselectAllBtn");
+    const generateBtn = modal.querySelector("#maGenerateBtn");
+    const generateReportBtn = modal.querySelector("#maGenerateReportBtn");
+    const exportReportBtn = modal.querySelector("#maExportReportBtn");
+    const printReportBtn = modal.querySelector("#maPrintReportBtn");
+    const dashboardEl = modal.querySelector("#maDashboard");
+
+    selectAllBtn.onclick = () => { checkboxes.forEach(cb => { cb.checked = true; }); };
+    selectActiveBtn.onclick = () => { checkboxes.forEach(cb => { cb.checked = !cb.dataset.archived; }); };
+    deselectAllBtn.onclick = () => { checkboxes.forEach(cb => { cb.checked = false; }); };
+
+    let currentDashboardData = null;
+
+    generateBtn.onclick = () => {
+      const selectedIds = [];
+      checkboxes.forEach(cb => { if (cb.checked) selectedIds.push(cb.value); });
+      if (selectedIds.length < 2) {
+        showToast("请至少选择2个项目", "error");
+        return;
+      }
+
+      const projects = MultiAnalysis.aggregateProjectData(selectedIds);
+      currentDashboardData = MultiAnalysis.computeDashboard(projects);
+      dashboardEl.innerHTML = renderMultiAnalysisDashboard(currentDashboardData);
+      dashboardEl.classList.remove("hidden");
+      generateReportBtn.style.display = "";
+      printReportBtn.style.display = "none";
+      exportReportBtn.style.display = "none";
+
+      setupDashboardTabs(dashboardEl, currentDashboardData);
     };
 
-    detailModal.onclick = (e) => {
-      if (e.target === detailModal) {
-        detailModal.classList.add("hidden");
+    generateReportBtn.onclick = () => {
+      if (!currentDashboardData) return;
+      const reportHTML = renderCrossProjectReportHTML(currentDashboardData);
+      let reportContainer = dashboardEl.querySelector(".ma-report-container");
+      if (reportContainer) {
+        reportContainer.innerHTML = reportHTML;
+        reportContainer.classList.remove("hidden");
+      } else {
+        reportContainer = document.createElement("div");
+        reportContainer.className = "ma-report-container";
+        reportContainer.innerHTML = reportHTML;
+        dashboardEl.appendChild(reportContainer);
+      }
+      printReportBtn.style.display = "";
+      exportReportBtn.style.display = "";
+      reportContainer.scrollIntoView({ behavior: "smooth" });
+    };
+
+    exportReportBtn.onclick = () => {
+      const reportContent = dashboardEl.querySelector(".report-page");
+      if (!reportContent) return;
+      const fullHTML = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>多项目综合现场报告</title><style>' + getReportPrintCSS() + getCrossProjectReportPrintCSS() + '</style></head><body>' + reportContent.innerHTML + '</body></html>';
+      const blob = new Blob([fullHTML], { type: "text/html;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "多项目综合现场报告.html";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast("报告已导出", "success");
+    };
+
+    printReportBtn.onclick = () => {
+      const reportContent = dashboardEl.querySelector(".report-page");
+      if (!reportContent) return;
+
+      const printWindow = window.open("", "_blank");
+      printWindow.document.write('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>多项目综合现场报告</title>');
+      printWindow.document.write('<style>');
+      printWindow.document.write(getReportPrintCSS());
+      printWindow.document.write(getCrossProjectReportPrintCSS());
+      printWindow.document.write('</style>');
+      printWindow.document.write('</head><body>');
+      printWindow.document.write(reportContent.innerHTML);
+      printWindow.document.write('</body></html>');
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => { printWindow.print(); }, 500);
+    };
+
+    modal.querySelector("#maCancelBtn").onclick = () => {
+      document.body.removeChild(backdrop);
+    };
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) {
+        document.body.removeChild(backdrop);
       }
     };
   }
 
-  function showRollbackConfirm(modal, snapshotId) {
-    if (!callbacks.onCheckRollbackConflicts || !callbacks.onRollbackToSnapshot) return;
+  function setupDashboardTabs(container, data) {
+    const tabButtons = container.querySelectorAll(".ma-tab-btn");
+    const tabContents = container.querySelectorAll(".ma-tab-content");
 
-    const conflictCheck = callbacks.onCheckRollbackConflicts(snapshotId);
-    if (!conflictCheck.valid) {
-      showToast(conflictCheck.error, "error");
-      return;
+    tabButtons.forEach(btn => {
+      btn.onclick = () => {
+        const tabId = btn.dataset.tab;
+        tabButtons.forEach(b => b.classList.remove("active"));
+        tabContents.forEach(c => c.classList.add("hidden"));
+        btn.classList.add("active");
+        const content = container.querySelector("#maTab-" + tabId);
+        if (content) content.classList.remove("hidden");
+      };
+    });
+  }
+
+  function renderMultiAnalysisDashboard(data) {
+    let html = '';
+
+    if (data.compatibilityWarnings.length > 0) {
+      html += '<div class="ma-compatibility-notice">';
+      html += '<div class="ma-notice-title">⚠️ 兼容性提示</div>';
+      const grouped = {};
+      data.compatibilityWarnings.forEach(w => {
+        if (!grouped[w.field]) grouped[w.field] = [];
+        grouped[w.field].push(w.projectName);
+      });
+      Object.entries(grouped).forEach(([field, names]) => {
+        html += '<div class="ma-notice-item"><span class="pill pill-error small">' + escapeHtml(field) + '</span> 以下项目缺少此字段：' + names.map(n => escapeHtml(n)).join("、") + '</div>';
+      });
+      html += '</div>';
     }
 
-    const snapshot = callbacks.onGetSnapshotDetail(snapshotId);
-    if (!snapshot) {
-      showToast("快照不存在", "error");
-      return;
-    }
+    html += '<div class="ma-summary-cards">';
+    html += '<div class="ma-stat-card ma-stat-primary"><div class="ma-stat-value">' + data.projectCount + '</div><div class="ma-stat-label">项目数</div></div>';
+    html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.totalMarks + '</div><div class="ma-stat-label">总标记</div></div>';
+    html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.totalDives + '</div><div class="ma-stat-label">总潜次</div></div>';
+    html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.totalMeasurements + '</div><div class="ma-stat-label">总测距</div></div>';
+    html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.totalParticipants + '</div><div class="ma-stat-label">总参与人次</div></div>';
+    html += '<div class="ma-stat-card ma-stat-warning"><div class="ma-stat-value">' + data.backlogRate + '%</div><div class="ma-stat-label">积压率</div></div>';
+    html += '</div>';
 
-    let message = `确定要回滚到以下版本吗？\n\n「${snapshot.description}」\n时间：${new Date(snapshot.timestamp).toLocaleString()}\n\n`;
+    html += '<div class="ma-tabs">';
+    html += '<button class="ma-tab-btn active" data-tab="overview">总览</button>';
+    html += '<button class="ma-tab-btn" data-tab="marks">标记分布</button>';
+    html += '<button class="ma-tab-btn" data-tab="review">审核积压</button>';
+    html += '<button class="ma-tab-btn" data-tab="efficiency">潜次效率</button>';
+    html += '<button class="ma-tab-btn" data-tab="heatmap">热力图</button>';
+    html += '<button class="ma-tab-btn" data-tab="revisit">返潜重点</button>';
+    html += '</div>';
 
-    if (conflictCheck.conflicts && conflictCheck.conflicts.length > 0) {
-      const warnings = conflictCheck.conflicts.filter(c => c.type === "warning");
-      const changes = conflictCheck.conflicts.filter(c => c.type !== "warning");
+    html += '<div id="maTab-overview" class="ma-tab-content">';
+    html += '<div class="ma-section">';
+    html += '<h3>项目概览</h3>';
+    html += '<table class="report-table"><thead><tr><th>项目</th><th>状态</th><th>标记</th><th>潜次</th><th>测距</th><th>积压率</th><th>标记/潜次</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td><b>' + escapeHtml(p.name) + '</b></td>';
+      html += '<td>' + (p.archived ? '<span class="pill pill-error small">已归档</span>' : '<span class="pill pill-new small">活动</span>') + '</td>';
+      html += '<td>' + p.totalMarks + '</td>';
+      html += '<td>' + p.totalDives + '</td>';
+      html += '<td>' + p.totalMeasurements + '</td>';
+      html += '<td>' + p.backlogRate + '%</td>';
+      html += '<td>' + p.marksPerDive + '</td>';
+      html += '</tr>';
+    });
+    html += '<tr style="font-weight:700;background:#f5fafb;"><td>合计</td><td>—</td><td>' + data.totalMarks + '</td><td>' + data.totalDives + '</td><td>' + data.totalMeasurements + '</td><td>' + data.backlogRate + '%</td><td>—</td></tr>';
+    html += '</tbody></table>';
+    html += '</div>';
 
-      if (changes.length > 0) {
-        message += `⚠️  数据变更：\n`;
-        if (conflictCheck.stats?.marksToAdd > 0) message += `  • 将恢复 ${conflictCheck.stats.marksToAdd} 个标记\n`;
-        if (conflictCheck.stats?.marksToDelete > 0) message += `  • 将删除 ${conflictCheck.stats.marksToDelete} 个标记\n`;
-        if (conflictCheck.stats?.divesToDelete > 0) message += `  • 将删除 ${conflictCheck.stats.divesToDelete} 个潜次\n`;
+    html += '<div class="ma-section">';
+    html += '<h3>类型统计（全局）</h3>';
+    html += '<div class="ma-type-bars">';
+    Object.keys(typeNames).forEach(t => {
+      const count = data.typeCountsGlobal[t] || 0;
+      const pct = data.totalMarks > 0 ? ((count / data.totalMarks) * 100).toFixed(1) : "0.0";
+      html += '<div class="ma-type-bar-item">';
+      html += '<div class="ma-type-bar-label"><span class="pill ' + t + ' small">' + typeNames[t] + '</span><span class="muted">' + count + '个 · ' + pct + '%</span></div>';
+      html += '<div class="ma-type-bar-track"><div class="ma-type-bar-fill ' + t + '" style="width:' + pct + '%"></div></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="ma-section">';
+    html += '<h3>审核状态统计（全局）</h3>';
+    html += '<div class="ma-review-bars">';
+    Object.keys(reviewStatusNames).forEach(s => {
+      const count = data.reviewCountsGlobal[s] || 0;
+      const pct = data.totalMarks > 0 ? ((count / data.totalMarks) * 100).toFixed(1) : "0.0";
+      html += '<div class="ma-review-bar-item">';
+      html += '<div class="ma-review-bar-label"><span class="pill pill-review pill-review-' + s + ' small">' + reviewStatusNames[s] + '</span><span class="muted">' + count + '个 · ' + pct + '%</span></div>';
+      html += '<div class="ma-review-bar-track"><div class="ma-review-bar-fill ' + s + '" style="width:' + pct + '%"></div></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div id="maTab-marks" class="ma-tab-content hidden">';
+    html += '<div class="ma-section">';
+    html += '<h3>各项目类型分布</h3>';
+    html += '<table class="report-table"><thead><tr><th>项目</th>';
+    Object.keys(typeNames).forEach(t => { html += '<th>' + typeNames[t] + '</th>'; });
+    html += '<th>合计</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td><b>' + escapeHtml(p.name) + '</b>' + (p.archived ? ' <span class="pill pill-error small">归档</span>' : '') + '</td>';
+      Object.keys(typeNames).forEach(t => { html += '<td>' + (p.typeCounts[t] || 0) + '</td>'; });
+      html += '<td><b>' + p.totalMarks + '</b></td>';
+      html += '</tr>';
+    });
+    html += '<tr style="font-weight:700;background:#f5fafb;"><td>合计</td>';
+    Object.keys(typeNames).forEach(t => { html += '<td>' + (data.typeCountsGlobal[t] || 0) + '</td>'; });
+    html += '<td>' + data.totalMarks + '</td></tr>';
+    html += '</tbody></table>';
+    html += '</div>';
+
+    html += '<div class="ma-section">';
+    html += '<h3>保存状况统计（按项目拆分）</h3>';
+    const allConditions = new Set();
+    data.perProject.forEach(p => { Object.keys(p.conditionCounts).forEach(c => allConditions.add(c)); });
+    const conditionList = Array.from(allConditions);
+    html += '<div style="overflow-x:auto;">';
+    html += '<table class="report-table"><thead><tr><th>项目</th>';
+    conditionList.forEach(c => { html += '<th>' + escapeHtml(c) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td><b>' + escapeHtml(p.name) + '</b></td>';
+      conditionList.forEach(c => { html += '<td>' + (p.conditionCounts[c] || 0) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div id="maTab-review" class="ma-tab-content hidden">';
+    html += '<div class="ma-section">';
+    html += '<h3>审核积压（按项目拆分）</h3>';
+    html += '<table class="report-table"><thead><tr><th>项目</th>';
+    Object.keys(reviewStatusNames).forEach(s => { html += '<th>' + reviewStatusNames[s] + '</th>'; });
+    html += '<th>积压率</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td><b>' + escapeHtml(p.name) + '</b></td>';
+      Object.keys(reviewStatusNames).forEach(s => { html += '<td>' + (p.reviewCounts[s] || 0) + '</td>'; });
+      html += '<td>' + p.backlogRate + '%</td>';
+      html += '</tr>';
+    });
+    html += '<tr style="font-weight:700;background:#f5fafb;"><td>合计</td>';
+    Object.keys(reviewStatusNames).forEach(s => { html += '<td>' + (data.reviewCountsGlobal[s] || 0) + '</td>'; });
+    html += '<td>' + data.backlogRate + '%</td></tr>';
+    html += '</tbody></table>';
+    html += '</div>';
+
+    if (data.importErrorAnalysis && data.importErrorAnalysis.totalErrors > 0) {
+      html += '<div class="ma-section">';
+      html += '<h3>导入错误趋势</h3>';
+      html += '<div class="ma-summary-cards" style="margin:0 0 10px;">';
+      html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.importErrorAnalysis.totalErrors + '</div><div class="ma-stat-label">总错误</div></div>';
+      html += '<div class="ma-stat-card"><div class="ma-stat-value">' + Object.keys(data.importErrorAnalysis.byProject || {}).length + '</div><div class="ma-stat-label">涉及项目</div></div>';
+      html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.importErrorAnalysis.timeline.length + '</div><div class="ma-stat-label">涉及天数</div></div>';
+      html += '</div>';
+      html += '<table class="report-table"><thead><tr><th>日期</th><th>错误数</th><th>涉及项目</th><th>分类明细</th></tr></thead><tbody>';
+      const catLabels = { marks: "标记", dives: "潜次", measurements: "测距" };
+      data.importErrorAnalysis.timeline.slice(-15).forEach(item => {
+        html += '<tr>';
+        html += '<td>' + escapeHtml(item.date) + '</td>';
+        html += '<td><b>' + item.total + '</b></td>';
+        const projectNames = Object.entries(item.byProject || {}).map(([pid, count]) => {
+          const p = data.perProject.find(pp => pp.id === pid);
+          return (p ? p.name : pid) + '(' + count + ')';
+        }).join("、");
+        html += '<td>' + escapeHtml(projectNames || "-") + '</td>';
+        const catDetail = Object.entries(item.byCategory || {}).map(([k, v]) => (catLabels[k] || k) + ' ' + v).join("，");
+        html += '<td>' + escapeHtml(catDetail || "-") + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      if (data.importErrorAnalysis.timeline.length > 15) {
+        html += '<div class="muted" style="text-align:center;margin-top:8px;">显示最近 15 天，完整记录请查看综合报告</div>';
       }
-      if (warnings.length > 0) {
-        message += `\nℹ️  提示：\n`;
-        warnings.forEach(w => {
-          message += `  • ${w.description}\n`;
+      html += '</div>';
+    }
+    html += '</div>';
+
+    html += '<div id="maTab-efficiency" class="ma-tab-content hidden">';
+    html += '<div class="ma-section">';
+    html += '<h3>潜次效率对比</h3>';
+    html += '<table class="report-table"><thead><tr><th>项目</th><th>潜次</th><th>标记</th><th>标记/潜次</th><th>测距</th><th>测距/潜次</th><th>人次</th><th>人次/潜次</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td><b>' + escapeHtml(p.name) + '</b></td>';
+      html += '<td>' + p.totalDives + '</td>';
+      html += '<td>' + p.totalMarks + '</td>';
+      html += '<td>' + p.marksPerDive + '</td>';
+      html += '<td>' + p.totalMeasurements + '</td>';
+      html += '<td>' + p.measurementsPerDive + '</td>';
+      html += '<td>' + p.totalParticipants + '</td>';
+      html += '<td>' + p.participantsPerDive + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '</div>';
+
+    html += '<div class="ma-section">';
+    html += '<h3>各潜次详情（按项目）</h3>';
+    const projectColors = generateProjectColors(data.perProject);
+    data.perProject.forEach(p => {
+      if (p.diveDetails && p.diveDetails.length > 0) {
+        html += '<div class="ma-dive-project-block">';
+        html += '<h4><span class="ma-legend-dot" style="background:' + (projectColors[p.id] || "#725ca6") + '"></span> ' + escapeHtml(p.name) + ' <span class="muted">(' + p.diveDetails.length + '个潜次)</span></h4>';
+        html += '<table class="report-table small-table"><thead><tr><th>潜次</th><th>日期</th><th>负责人</th><th>标记数</th><th>测距数</th><th>人数</th></tr></thead><tbody>';
+        p.diveDetails.slice(0, 10).forEach(d => {
+          html += '<tr>';
+          html += '<td>' + escapeHtml(d.code) + '</td>';
+          html += '<td>' + escapeHtml(d.date || "—") + '</td>';
+          html += '<td>' + escapeHtml(d.leader || "—") + '</td>';
+          html += '<td>' + d.markCount + '</td>';
+          html += '<td>' + d.measurementCount + '</td>';
+          html += '<td>' + d.participantCount + '</td>';
+          html += '</tr>';
         });
+        if (p.diveDetails.length > 10) {
+          html += '<tr><td colspan="6" class="muted" style="text-align:center;">还有 ' + (p.diveDetails.length - 10) + ' 个潜次，完整列表请查看综合报告</td></tr>';
+        }
+        html += '</tbody></table>';
+        html += '</div>';
       }
-      message += `\n`;
+    });
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div id="maTab-heatmap" class="ma-tab-content hidden">';
+    html += '<div class="ma-section">';
+    html += '<h3>热力图（按项目来源着色）</h3>';
+    html += '<div class="ma-heatmap-container">';
+    html += '<svg class="ma-heatmap-svg" viewBox="0 0 100 75" xmlns="http://www.w3.org/2000/svg">';
+    html += '<rect width="100" height="75" fill="#0f5262"/>';
+    html += '<ellipse cx="50" cy="32" rx="26" ry="11.5" fill="none" stroke="rgba(220,235,224,.55)" stroke-width="0.8" transform="rotate(-7 50 32)"/>';
+    data.allHeatmapMarks.forEach(m => {
+      if (m.x == null || m.y == null) return;
+      const adjustedY = (m.y / 100) * 75;
+      const color = projectColors[m.projectId] || "#725ca6";
+      const statusBorders = { collected: "#2196f3", pending: "#ffc107", confirmed: "#4caf50", revisit: "#e91e63" };
+      const borderColor = statusBorders[m.reviewStatus] || "#fff";
+      html += '<circle cx="' + m.x + '" cy="' + adjustedY + '" r="2.5" fill="' + color + '" stroke="' + borderColor + '" stroke-width="0.6" opacity="0.85"/>';
+    });
+    html += '</svg>';
+    html += '<div class="ma-heatmap-legend">';
+    data.perProject.forEach(p => {
+      const color = projectColors[p.id] || "#725ca6";
+      html += '<div class="ma-legend-item"><span class="ma-legend-dot" style="background:' + color + '"></span>' + escapeHtml(p.name) + ' (' + p.totalMarks + ')</div>';
+    });
+    html += '</div>';
+    html += '</div>';
+    html += '<div class="muted" style="text-align:center;margin-top:8px;">注：不同项目的底图坐标可能不统一，仅作分布趋势参考</div>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div id="maTab-revisit" class="ma-tab-content hidden">';
+    html += '<div class="ma-section">';
+    html += '<h3>返潜重点汇总</h3>';
+    if (data.allRevisitTasks && data.allRevisitTasks.length > 0) {
+      html += '<div class="ma-summary-cards" style="margin:10px 0;">';
+      html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.allRevisitTasks.length + '</div><div class="ma-stat-label">任务组数</div></div>';
+      html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.reviewCountsGlobal.pending + '</div><div class="ma-stat-label">待复核</div></div>';
+      html += '<div class="ma-stat-card"><div class="ma-stat-value">' + data.reviewCountsGlobal.revisit + '</div><div class="ma-stat-label">需返潜</div></div>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="ma-section">';
+    html += '<h3>各项目返潜重点</h3>';
+    const projectColors2 = generateProjectColors(data.perProject);
+    let hasAnyRevisit = false;
+    data.perProject.forEach(p => {
+      if (p.revisitHighlights && p.revisitHighlights.length > 0) {
+        hasAnyRevisit = true;
+        html += '<div class="ma-revisit-project">';
+        html += '<h4><span class="ma-legend-dot" style="background:' + (projectColors2[p.id] || "#725ca6") + '"></span> ' + escapeHtml(p.name) + ' <span class="muted">(' + p.revisitMarkCount + '个待处理标记)</span></h4>';
+        html += '<table class="report-table"><thead><tr><th>编号</th><th>类型</th><th>潜次</th><th>深度</th><th>保存状态</th><th>审核状态</th><th>复核意见</th></tr></thead><tbody>';
+        p.revisitHighlights.slice(0, 10).forEach(m => {
+          html += '<tr>';
+          html += '<td>' + escapeHtml(m.code) + '</td>';
+          html += '<td><span class="pill ' + m.type + ' small">' + escapeHtml(typeNames[m.type] || m.type) + '</span></td>';
+          html += '<td>' + escapeHtml(m.dive || "—") + '</td>';
+          html += '<td>' + escapeHtml(m.depth || "—") + '</td>';
+          html += '<td>' + escapeHtml(m.condition || "—") + '</td>';
+          html += '<td><span class="pill pill-review pill-review-' + m.reviewStatus + ' small">' + escapeHtml(reviewStatusNames[m.reviewStatus] || m.reviewStatus) + '</span></td>';
+          html += '<td>' + escapeHtml(m.reviewComment || "—") + '</td>';
+          html += '</tr>';
+        });
+        if (p.revisitHighlights.length > 10) {
+          html += '<tr><td colspan="7" class="muted" style="text-align:center;">还有 ' + (p.revisitHighlights.length - 10) + ' 个标记，完整列表请查看综合报告</td></tr>';
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+      }
+    });
+    if (!hasAnyRevisit) {
+      html += '<div class="ma-empty-state">';
+      html += '<div class="ma-empty-icon">✅</div>';
+      html += '<div class="ma-empty-text">所有项目均无返潜重点标记</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+
+    return html;
+  }
+
+  function generateProjectColors(projects) {
+    const palette = ["#e53935", "#1e88e5", "#43a047", "#fb8c00", "#8e24aa", "#00acc1", "#f4511e", "#3949ab", "#7cb342", "#d81b60"];
+    const colors = {};
+    projects.forEach((p, i) => {
+      colors[p.id] = palette[i % palette.length];
+    });
+    return colors;
+  }
+
+  function renderCrossProjectReportHTML(data) {
+    const generatedDate = new Date(data.generatedAt).toLocaleString("zh-CN");
+    const projectNames = data.perProject.map(p => p.name).join("、");
+    const catLabels = { marks: "标记", dives: "潜次", measurements: "测距" };
+
+    let html = '<div class="report-page">';
+    html += '<div class="report-header">';
+    html += '<h1>多项目综合现场报告</h1>';
+    html += '<div class="report-meta">生成时间：' + generatedDate + '</div>';
+    html += '<div class="report-meta">包含项目：' + escapeHtml(projectNames) + '（共' + data.projectCount + '个项目）</div>';
+    html += '<div class="report-meta">报告范围：多项目综合分析（只读模式，未修改任何项目数据）</div>';
+    html += '</div>';
+
+    html += '<div class="report-summary">';
+    html += '<div class="report-summary-cards">';
+    html += '<div class="report-stat-card"><div class="report-stat-value">' + data.projectCount + '</div><div class="report-stat-label">项目</div></div>';
+    html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalDives + '</div><div class="report-stat-label">潜次</div></div>';
+    html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalMarks + '</div><div class="report-stat-label">标记</div></div>';
+    html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalMeasurements + '</div><div class="report-stat-label">测距</div></div>';
+    html += '<div class="report-stat-card"><div class="report-stat-value">' + data.totalParticipants + '</div><div class="report-stat-label">参与人次</div></div>';
+    html += '<div class="report-stat-card"><div class="report-stat-value">' + data.backlogRate + '%</div><div class="report-stat-label">积压率</div></div>';
+    html += '</div>';
+    html += '</div>';
+
+    if (data.compatibilityWarnings.length > 0) {
+      html += '<div class="report-section">';
+      html += '<h2>数据兼容性说明</h2>';
+      const grouped = {};
+      data.compatibilityWarnings.forEach(w => {
+        if (!grouped[w.field]) grouped[w.field] = [];
+        grouped[w.field].push(w.projectName);
+      });
+      Object.entries(grouped).forEach(([field, names]) => {
+        html += '<div class="report-meta"><span class="pill pill-warning small">' + escapeHtml(field) + '</span> 以下项目缺少此字段：' + names.map(n => escapeHtml(n)).join("、") + '</div>';
+      });
+      html += '<div class="muted" style="margin-top:8px;">旧项目缺少的字段已自动补全默认值，不影响基础统计分析。比例尺、网格等缺失可能影响精确位置计算。</div>';
+      html += '</div>';
     }
 
-    message += `回滚后将自动创建当前状态的备份快照，可用于撤销操作。`;
+    html += '<div class="report-section">';
+    html += '<h2>项目概览</h2>';
+    html += '<table class="report-table"><thead><tr><th>项目</th><th>状态</th><th>标记</th><th>潜次</th><th>测距</th><th>参与人次</th><th>积压率</th><th>标记/潜次</th><th>比例尺</th><th>网格</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td><b>' + escapeHtml(p.name) + '</b></td>';
+      html += '<td>' + (p.archived ? '<span class="pill pill-error small">已归档</span>' : '<span class="pill pill-new small">活动</span>') + '</td>';
+      html += '<td>' + p.totalMarks + '</td>';
+      html += '<td>' + p.totalDives + '</td>';
+      html += '<td>' + p.totalMeasurements + '</td>';
+      html += '<td>' + p.totalParticipants + '</td>';
+      html += '<td>' + p.backlogRate + '%</td>';
+      html += '<td>' + p.marksPerDive + '</td>';
+      html += '<td>' + (p.hasScale ? "✓ 有" : "✗ 无") + '</td>';
+      html += '<td>' + (p.hasGrid ? "✓ 有" : "✗ 无") + '</td>';
+      html += '</tr>';
+    });
+    html += '<tr style="font-weight:700;background:#f5fafb;"><td>合计</td><td>—</td><td>' + data.totalMarks + '</td><td>' + data.totalDives + '</td><td>' + data.totalMeasurements + '</td><td>' + data.totalParticipants + '</td><td>' + data.backlogRate + '%</td><td>—</td><td>—</td><td>—</td></tr>';
+    html += '</tbody></table>';
+    html += '</div>';
 
-    const confirmed = confirm(message);
-    if (!confirmed) return;
+    html += '<div class="report-section">';
+    html += '<h2>类型统计（按项目拆分）</h2>';
+    html += '<table class="report-table"><thead><tr><th>项目</th>';
+    Object.keys(typeNames).forEach(t => { html += '<th>' + typeNames[t] + '</th>'; });
+    html += '<th>合计</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td>' + escapeHtml(p.name) + '</td>';
+      Object.keys(typeNames).forEach(t => { html += '<td>' + (p.typeCounts[t] || 0) + '</td>'; });
+      html += '<td><b>' + p.totalMarks + '</b></td>';
+      html += '</tr>';
+    });
+    html += '<tr style="font-weight:700;background:#f5fafb;"><td>合计</td>';
+    Object.keys(typeNames).forEach(t => { html += '<td>' + (data.typeCountsGlobal[t] || 0) + '</td>'; });
+    html += '<td>' + data.totalMarks + '</td></tr>';
+    html += '</tbody></table>';
+    html += '</div>';
 
-    const force = conflictCheck.conflicts && conflictCheck.conflicts.some(c => c.type !== "warning");
+    html += '<div class="report-section">';
+    html += '<h2>审核状态统计（按项目拆分）</h2>';
+    html += '<table class="report-table"><thead><tr><th>项目</th>';
+    Object.keys(reviewStatusNames).forEach(s => { html += '<th>' + reviewStatusNames[s] + '</th>'; });
+    html += '<th>积压率</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td>' + escapeHtml(p.name) + '</td>';
+      Object.keys(reviewStatusNames).forEach(s => { html += '<td>' + (p.reviewCounts[s] || 0) + '</td>'; });
+      html += '<td>' + p.backlogRate + '%</td>';
+      html += '</tr>';
+    });
+    html += '<tr style="font-weight:700;background:#f5fafb;"><td>合计</td>';
+    Object.keys(reviewStatusNames).forEach(s => { html += '<td>' + (data.reviewCountsGlobal[s] || 0) + '</td>'; });
+    html += '<td>' + data.backlogRate + '%</td></tr>';
+    html += '</tbody></table>';
+    html += '</div>';
 
-    showToast("正在回滚...", "info");
+    html += '<div class="report-section">';
+    html += '<h2>保存状况统计（按项目拆分）</h2>';
+    const allConditions = new Set();
+    data.perProject.forEach(p => { Object.keys(p.conditionCounts).forEach(c => allConditions.add(c)); });
+    const conditionList = Array.from(allConditions);
+    html += '<div style="overflow-x:auto;">';
+    html += '<table class="report-table"><thead><tr><th>项目</th>';
+    conditionList.forEach(c => { html += '<th>' + escapeHtml(c) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td>' + escapeHtml(p.name) + '</td>';
+      conditionList.forEach(c => { html += '<td>' + (p.conditionCounts[c] || 0) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '</div>';
+    html += '</div>';
 
-    const result = callbacks.onRollbackToSnapshot(snapshotId, { force, createUndoSnapshot: true });
+    html += '<div class="report-section">';
+    html += '<h2>潜次效率与测距数量</h2>';
+    html += '<table class="report-table"><thead><tr><th>项目</th><th>潜次</th><th>标记</th><th>标记/潜次</th><th>测距</th><th>测距/潜次</th><th>人次</th><th>人次/潜次</th></tr></thead><tbody>';
+    data.perProject.forEach(p => {
+      html += '<tr>';
+      html += '<td><b>' + escapeHtml(p.name) + '</b></td>';
+      html += '<td>' + p.totalDives + '</td>';
+      html += '<td>' + p.totalMarks + '</td>';
+      html += '<td>' + p.marksPerDive + '</td>';
+      html += '<td>' + p.totalMeasurements + '</td>';
+      html += '<td>' + p.measurementsPerDive + '</td>';
+      html += '<td>' + p.totalParticipants + '</td>';
+      html += '<td>' + p.participantsPerDive + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '</div>';
 
-    if (result.success) {
-      let successMsg = "已成功回滚到历史版本";
-      if (result.undoSnapshotId) {
-        successMsg += "，已自动创建回滚前的备份";
+    html += '<div class="report-section">';
+    html += '<h2>各项目潜次详情</h2>';
+    const projectColors = generateProjectColors(data.perProject);
+    data.perProject.forEach(p => {
+      if (p.diveDetails && p.diveDetails.length > 0) {
+        html += '<div class="report-dive-block">';
+        html += '<h3><span class="ma-legend-dot" style="background:' + (projectColors[p.id] || "#725ca6") + ';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;"></span>' + escapeHtml(p.name) + ' <span class="muted">（' + p.diveDetails.length + '个潜次）</span></h3>';
+        html += '<table class="report-table"><thead><tr><th>潜次</th><th>日期</th><th>负责人</th><th>天气</th><th>标记数</th><th>测距数</th><th>参与人数</th></tr></thead><tbody>';
+        p.diveDetails.forEach(d => {
+          html += '<tr>';
+          html += '<td>' + escapeHtml(d.code) + '</td>';
+          html += '<td>' + escapeHtml(d.date || "—") + '</td>';
+          html += '<td>' + escapeHtml(d.leader || "—") + '</td>';
+          html += '<td>' + escapeHtml((weatherNames && weatherNames[d.weather]) || d.weather || "—") + '</td>';
+          html += '<td>' + d.markCount + '</td>';
+          html += '<td>' + d.measurementCount + '</td>';
+          html += '<td>' + d.participantCount + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        html += '</div>';
       }
-      showToast(successMsg, "success");
+    });
+    html += '</div>';
 
-      if (result.conflicts && result.conflicts.some(c => c.type === "warning" && c.action === "merge_import")) {
-        setTimeout(() => {
-          showToast("提示：回滚包含合并/导入数据，原始合并记录已保留", "info");
-        }, 1500);
-      }
+    if (data.importErrorAnalysis && data.importErrorAnalysis.totalErrors > 0) {
+      html += '<div class="report-section">';
+      html += '<h2>导入错误统计</h2>';
+      html += '<div class="report-summary-cards" style="margin-bottom:16px;">';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + data.importErrorAnalysis.totalErrors + '</div><div class="report-stat-label">总错误数</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + Object.keys(data.importErrorAnalysis.byProject || {}).length + '</div><div class="report-stat-label">涉及项目</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + data.importErrorAnalysis.timeline.length + '</div><div class="report-stat-label">涉及天数</div></div>';
+      html += '</div>';
 
-      renderTimeline(modal);
-    } else {
-      showToast(result.error || "回滚失败", "error");
+      html += '<h3>按项目统计</h3>';
+      html += '<table class="report-table"><thead><tr><th>项目</th><th>错误数</th><th>分类明细</th></tr></thead><tbody>';
+      Object.entries(data.importErrorAnalysis.byProject || {}).forEach(([pid, info]) => {
+        const p = data.perProject.find(pp => pp.id === pid);
+        const catDetail = Object.entries(info.byCategory || {}).map(([k, v]) => (catLabels[k] || k) + ' ' + v).join("，");
+        html += '<tr>';
+        html += '<td><b>' + escapeHtml(p ? p.name : pid) + '</b></td>';
+        html += '<td>' + info.total + '</td>';
+        html += '<td>' + escapeHtml(catDetail || "-") + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+
+      html += '<h3 style="margin-top:16px;">错误趋势（按日期）</h3>';
+      html += '<table class="report-table"><thead><tr><th>日期</th><th>错误数</th><th>涉及项目</th><th>分类明细</th></tr></thead><tbody>';
+      data.importErrorAnalysis.timeline.slice(-30).forEach(item => {
+        html += '<tr>';
+        html += '<td>' + escapeHtml(item.date) + '</td>';
+        html += '<td><b>' + item.total + '</b></td>';
+        const projectNamesList = Object.entries(item.byProject || {}).map(([pid, count]) => {
+          const p = data.perProject.find(pp => pp.id === pid);
+          return (p ? p.name : pid) + '(' + count + ')';
+        }).join("、");
+        html += '<td>' + escapeHtml(projectNamesList || "-") + '</td>';
+        const catDetail = Object.entries(item.byCategory || {}).map(([k, v]) => (catLabels[k] || k) + ' ' + v).join("，");
+        html += '<td>' + escapeHtml(catDetail || "-") + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '</div>';
     }
+
+    html += '<div class="report-section">';
+    html += '<h2>热力图概览（按项目来源着色）</h2>';
+    html += '<div class="report-map-overview">';
+    html += '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 100 75">';
+    html += '<rect width="100" height="75" fill="#0f5262"/>';
+    html += '<ellipse cx="50" cy="32" rx="26" ry="11.5" fill="none" stroke="rgba(220,235,224,.55)" stroke-width="0.8" transform="rotate(-7 50 32)"/>';
+    data.allHeatmapMarks.forEach(m => {
+      if (m.x == null || m.y == null) return;
+      const adjustedY = (m.y / 100) * 75;
+      const color = projectColors[m.projectId] || "#725ca6";
+      const statusBorders = { collected: "#2196f3", pending: "#ffc107", confirmed: "#4caf50", revisit: "#e91e63" };
+      const borderColor = statusBorders[m.reviewStatus] || "#fff";
+      html += '<circle cx="' + m.x + '" cy="' + adjustedY + '" r="2.2" fill="' + color + '" stroke="' + borderColor + '" stroke-width="0.6"/>';
+    });
+    html += '</svg>';
+    html += '<div class="report-map-legend">';
+    html += '<div class="report-legend-title">项目来源</div>';
+    data.perProject.forEach(p => {
+      const color = projectColors[p.id] || "#725ca6";
+      html += '<div class="report-legend-item"><span class="ma-legend-dot" style="background:' + color + ';display:inline-block;"></span> ' + escapeHtml(p.name) + ' (' + p.totalMarks + '个标记)</div>';
+    });
+    html += '</div>';
+    html += '</div>';
+    html += '<div class="muted" style="text-align:center;margin-top:8px;">注：不同项目的底图坐标可能不统一，仅作分布趋势参考</div>';
+    html += '</div>';
+
+    html += '<div class="report-section">';
+    html += '<h2>返潜重点（按项目拆分）</h2>';
+    if (data.allRevisitTasks && data.allRevisitTasks.length > 0) {
+      html += '<div class="report-summary-cards" style="margin-bottom:16px;">';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + data.allRevisitTasks.length + '</div><div class="report-stat-label">返潜任务组</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + data.reviewCountsGlobal.pending + '</div><div class="report-stat-label">待复核</div></div>';
+      html += '<div class="report-stat-card"><div class="report-stat-value">' + data.reviewCountsGlobal.revisit + '</div><div class="report-stat-label">需返潜</div></div>';
+      html += '</div>';
+    }
+    data.perProject.forEach(p => {
+      if (p.revisitHighlights.length === 0) return;
+      html += '<div class="report-dive-block">';
+      html += '<h3>' + escapeHtml(p.name) + ' <span class="muted">(' + p.revisitMarkCount + '个待处理标记)</span></h3>';
+      html += '<table class="report-table"><thead><tr><th>编号</th><th>类型</th><th>潜次</th><th>深度</th><th>保存状态</th><th>审核状态</th><th>复核意见</th></tr></thead><tbody>';
+      p.revisitHighlights.forEach(m => {
+        html += '<tr>';
+        html += '<td>' + escapeHtml(m.code) + '</td>';
+        html += '<td><span class="pill ' + m.type + ' small">' + escapeHtml(typeNames[m.type] || m.type) + '</span></td>';
+        html += '<td>' + escapeHtml(m.dive || "—") + '</td>';
+        html += '<td>' + escapeHtml(m.depth || "—") + '</td>';
+        html += '<td>' + escapeHtml(m.condition || "—") + '</td>';
+        html += '<td><span class="pill pill-review pill-review-' + m.reviewStatus + ' small">' + escapeHtml(reviewStatusNames[m.reviewStatus] || m.reviewStatus) + '</span></td>';
+        html += '<td>' + escapeHtml(m.reviewComment || "—") + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function getCrossProjectReportPrintCSS() {
+    return `
+      .ma-legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+      .pill.small { padding: 1px 6px; font-size: 11px; }
+      .pill-new { background: #d4edda; border-color: #28a745; color: #155724; }
+      .pill-error { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+      .pill-warning { background: #fff3cd; border-color: #ffc107; color: #856404; }
+      .pill-review { font-weight: 600; }
+      .pill-review-collected { background: #e3f2fd; border-color: #2196f3; color: #1565c0; }
+      .pill-review-pending { background: #fff8e1; border-color: #ffc107; color: #f57f17; }
+      .pill-review-confirmed { background: #e8f5e9; border-color: #4caf50; color: #2e7d32; }
+      .pill-review-revisit { background: #fce4ec; border-color: #e91e63; color: #c2185b; }
+      .report-summary-cards { flex-wrap: wrap; }
+      .report-stat-card { min-width: 100px; }
+      .report-dive-block h3 { margin-top: 0; }
+      .report-section:first-child { border-top: none; padding-top: 0; }
+      .report-map-overview svg { background: #0f5262; }
+      @media print {
+        .report-section { page-break-inside: auto; }
+        .report-dive-block { page-break-inside: avoid; }
+      }
+    `;
   }
 
   return {
@@ -5510,6 +5583,7 @@ const UI = (() => {
     renderStorageInfo,
     getCurrentAttachments,
     showReportModal,
+    showMultiAnalysisModal,
     updateProjectSelector,
     updateViewSelector,
     applyViewState,
